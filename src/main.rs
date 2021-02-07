@@ -175,7 +175,8 @@ enum CoordinatorMessage {
 /// This function reads stdout from the setup coordinator nodejs proxy
 /// process, and analyzes the output line by line searching for the
 /// `Websocket listening is on.` message, and notifies the
-/// `coordinator_rx` listeners that the proxy is ready.
+/// `coordinator_rx` listeners that the proxy is ready. Also this
+/// pipes the stdout from the nodejs proxy to [tracing::debug!()]
 fn setup_coordinator_proxy_reader(
     stdout: File,
     coordinator_tx: Sender<CoordinatorMessage>,
@@ -193,6 +194,7 @@ fn setup_coordinator_proxy_reader(
                     coordinator_tx.send(CoordinatorMessage::CoordinatorProxyReady)?;
                 }
 
+                // Pipe the process output to tracing debug
                 tracing::debug!("{}", line);
             }
             Err(error) => {
