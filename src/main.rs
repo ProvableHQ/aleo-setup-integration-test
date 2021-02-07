@@ -41,14 +41,15 @@ where
     P: AsRef<Path> + Debug,
 {
     tracing::info!("Cloning repository");
-    let exit_status = Exec::cmd("git")
+
+    Exec::cmd("git")
         .arg("clone")
         .arg(repository_url)
         .args(&["--depth", "1"])
         .arg(target_dir.as_ref())
-        .join()?;
-
-    parse_exit_status(exit_status)
+        .join()
+        .map_err(eyre::Error::from)
+        .and_then(parse_exit_status)
 }
 
 /// A rust toolchain version/specification to use with `cargo` or
@@ -105,9 +106,11 @@ where
         _ => cmd.arg(format!("+{}", toolchain)),
     };
 
-    let exit_status = cmd.arg("build").arg("--release").join()?;
-
-    parse_exit_status(exit_status)?;
+    cmd.arg("build")
+        .arg("--release")
+        .join()
+        .map_err(eyre::Error::from)
+        .and_then(parse_exit_status)?;
 
     Ok(crate_dir.as_ref().join("target/release"))
 }
@@ -138,9 +141,7 @@ fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
         _ => Ok(cmd.arg(toolchain.to_string())),
     }?;
 
-    let exit_status = cmd.join()?;
-
-    parse_exit_status(exit_status)
+    parse_exit_status(cmd.join()?)
 }
 
 /// Run `npm install` in the specified `run_directory`.
@@ -148,9 +149,12 @@ fn npm_install<P>(run_directory: P) -> eyre::Result<()>
 where
     P: AsRef<Path>,
 {
-    let exit_status = Exec::cmd("npm").cwd(run_directory).arg("install").join()?;
-
-    parse_exit_status(exit_status)
+    Exec::cmd("npm")
+        .cwd(run_directory)
+        .arg("install")
+        .join()
+        .map_err(eyre::Error::from)
+        .and_then(parse_exit_status)
 }
 
 /// Message sent between the various components running during the
@@ -381,7 +385,9 @@ fn run_coordinator(
     Exec::cmd(std::fs::canonicalize(config.setup_coordinator_bin)?)
         .cwd(config.crate_dir)
         .arg(config.phase.to_string())
-        .join()?;
+        .join()
+        .map_err(eyre::Error::from)
+        .and_then(parse_exit_status)?;
 
     // TODO: wait for the `Rocket has launched from` message on
     // STDOUT, just like how it is implemented in
@@ -421,11 +427,11 @@ fn main() -> eyre::Result<()> {
     // In the actual test it's probably good for this to fail if it's
     // trying to overwrite a previous test, it should be starting
     // clean.
-    get_git_repository(
-        "https://github.com/AleoHQ/aleo-setup-coordinator",
-        SETUP_COORDINATOR_DIR,
-    )?;
-    get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
+    // get_git_repository(
+    //     "https://github.com/AleoHQ/aleo-setup-coordinator",
+    //     SETUP_COORDINATOR_DIR,
+    // )?;
+    // get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
 
     // Build the setup coordinator Rust project.
     let coordinator_output_dir = build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
