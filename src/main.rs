@@ -1,13 +1,17 @@
+//! Integration test for `aleo-setup-coordinator` and `aleo-setup`'s
+//! `setup1-contributor` and `setup1-verifier`.
+
 use flume::{Receiver, Sender};
 use regex::Regex;
 use subprocess::{Exec, Redirection};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
 use std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -15,6 +19,8 @@ use std::{
 fn parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::Result<()> {
     match exit_status {
         subprocess::ExitStatus::Exited(0) => Ok(()),
+        // Terminated by the host (I'm guessing)
+        subprocess::ExitStatus::Signaled(15) => Ok(()),
         unexpected => Err(eyre::eyre!(
             "Unexpected process exit status: {:?}",
             unexpected
@@ -146,10 +152,18 @@ where
     parse_exit_status(exit_status)
 }
 
+/// Message sent between the various components running during the
+/// setup ceremony. Each component will have a process monitor running
+/// in its own thread which will listen to these messages.
 #[derive(Clone, Debug, Copy)]
 enum CoordinatorMessage {
+    /// Notify the receivers that the coordinator rocket server is
+    /// ready to start receiving requests.
     CoordinatorReady,
+    /// Notify the receivers that the cordinator nodejs proxy is ready
+    /// to start receiving requests.
     CoordinatorProxyReady,
+    /// Tell all the recievers to shut down.
     Shutdown,
 }
 
@@ -185,16 +199,29 @@ fn setup_coordinator_proxy_reader(
     Ok(())
 }
 
+struct SetupProxyThreadsJoin {
+    listener_join: JoinHandle<()>,
+    monitor_join: JoinHandle<()>,
+}
+
+impl SetupProxyThreadsJoin {
+    /// Join the setup proxy server threads.
+    pub fn join(self) -> std::thread::Result<()> {
+        self.listener_join.join()?;
+        self.monitor_join.join()
+    }
+}
+
 /// Starts the nodejs proxy for the setup coordinator server.
 ///
 /// Currently this doesn't cleanly shut down, there doesn't appear to
 /// be an easy way to share the process between the line reader, and
 /// the coordinator message listener.
-fn run_setup_coordinator_proxy<P>(
+fn run_coordinator_proxy<P>(
     setup_coordinator_repo: P,
     coordinator_tx: Sender<CoordinatorMessage>,
     coordinator_rx: Receiver<CoordinatorMessage>,
-) -> eyre::Result<()>
+) -> eyre::Result<SetupProxyThreadsJoin>
 where
     P: AsRef<Path> + Debug,
 {
@@ -209,7 +236,7 @@ where
         .stdout(Redirection::Pipe)
         .popen()?;
 
-    // Extract the stdout std::fs::File from `prossec`, replacing it
+    // Extract the stdout [std::fs::File] from `process`, replacing it
     // with a None. This is needed so we can both listen to stdout and
     // interact with `process`'s mutable methods (to terminate it if
     // required).
@@ -219,7 +246,7 @@ where
 
     // Thread to run the `setup_coordinator_proxy_reader()` function.
     let coordinator_tx_listener = coordinator_tx.clone();
-    std::thread::spawn(move || {
+    let listener_join = std::thread::spawn(move || {
         let span = tracing::error_span!("coordinator_proxy_listener");
         let _guard = span.enter();
 
@@ -236,14 +263,24 @@ where
         tracing::debug!("thread closing gracefully")
     });
 
-    std::thread::spawn(move || loop {
+    // This thread monitors messages, and terminates the nodejs
+    // process if a `Shutdown` message is received. It also monitors
+    // the exit status of the process, and if there was an error it
+    // will request a `Shutdown` and panic with the error.
+    let monitor_join = std::thread::spawn(move || loop {
+        let span = tracing::error_span!("coordinator_proxy_monitor");
+        let _guard = span.enter();
+
+        // Sleep occasionally because otherwise this loop will run too fast.
         std::thread::sleep(Duration::from_millis(100));
+
         match coordinator_rx.try_recv() {
             Ok(message) => match message {
                 CoordinatorMessage::Shutdown => {
+                    tracing::debug!("Telling the nodejs proxy server process to terminate");
                     process
                         .terminate()
-                        .expect("error terminating nodejs proxy process");
+                        .expect("error terminating nodejs proxy server process");
                 }
                 _ => {}
             },
@@ -253,27 +290,71 @@ where
             Err(flume::TryRecvError::Empty) => {}
         }
 
-        if let Some(Err(error)) = process.poll().map(parse_exit_status) {
-            coordinator_tx
-                .send(CoordinatorMessage::Shutdown)
-                .expect("Error sending shutdown message");
-            panic!("Error while running nodejs proxy server: {}", error);
+        if let Some(exit_result) = process.poll().map(parse_exit_status) {
+            tracing::debug!("nodejs proxy server process exited");
+            match exit_result {
+                Ok(_) => break,
+                Err(error) => {
+                    coordinator_tx
+                        .send(CoordinatorMessage::Shutdown)
+                        .expect("Error sending shutdown message");
+                    panic!("Error while running nodejs proxy server: {}", error);
+                }
+            }
         }
     });
 
-    Ok(())
+    Ok(SetupProxyThreadsJoin {
+        listener_join,
+        monitor_join,
+    })
 }
 
-fn run_setup_coordinator<P>(
-    setup_coordinator_bin: P,
+/// Which phase of the setup is to be run.
+///
+/// TODO: confirm is "Phase" the correct terminology here?
+#[derive(Debug, Clone, Copy)]
+pub enum SetupPhase {
+    Development,
+    Inner,
+    Outer,
+    Universal,
+}
+
+/// Configuration for the [run_coordinator()] function to run
+/// `aleo-setup-coordinator` rocket server.
+#[derive(Debug)]
+struct CoordinatorConfig {
+    /// The location of the `aleo-setup-coordinator` binary (including
+    /// the binary name).
+    pub setup_coordinator_bin: PathBuf,
+    /// What phase of the setup ceremony to run.
+    pub phase: SetupPhase,
+}
+
+impl Display for SetupPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SetupPhase::Development => "development",
+            SetupPhase::Inner => "inner",
+            SetupPhase::Outer => "outer",
+            SetupPhase::Universal => "universal",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+/// Run the `aleo-setup-coordinator`. This will first wait for the
+/// nodejs proxy to start (which will publish a
+/// [CoordinatorMessage::CoordinatorProxyReady]).
+fn run_coordinator(
+    config: CoordinatorConfig,
     coordinator_tx: Sender<CoordinatorMessage>,
     coordinator_rx: Receiver<CoordinatorMessage>,
-) -> eyre::Result<()>
-where
-    P: AsRef<Path> + Debug,
-{
-    let span1 = tracing::error_span!("coordinator");
-    let _guard = span1.enter();
+) -> eyre::Result<()> {
+    let span = tracing::error_span!("coordinator");
+    let _guard = span.enter();
 
     tracing::info!("Setup coordinator waiting for nodejs proxy to start.");
 
@@ -290,12 +371,21 @@ where
 
     tracing::info!("Starting setup coordinator.");
 
+    Exec::cmd(config.setup_coordinator_bin).join()?;
+
     Ok(())
 }
 
+/// The directory that the `aleo-setup-coordinator` repository is
+/// cloned to.
 const SETUP_COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+
+/// The directory that the `aleo-setup` repository is cloned to.
 const SETUP_DIR: &str = "aleo-setup";
 
+/// The main method of the test, which runs the test. In the future
+/// this may accept command line arguments to configure how the test
+/// is run.
 fn main() -> eyre::Result<()> {
     setup_reporting()?;
 
@@ -304,6 +394,7 @@ fn main() -> eyre::Result<()> {
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
     install_rust_toolchain(&rust_1_47_nightly)?;
 
+    // Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
     get_git_repository(
         "https://github.com/AleoHQ/aleo-setup-coordinator",
         SETUP_COORDINATOR_DIR,
@@ -311,19 +402,41 @@ fn main() -> eyre::Result<()> {
     get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
 
     // Build the setup coordinator Rust project.
-    let output_dir = build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
-    let setup_coordinator_bin = output_dir.join("aleo-setup-coordinator");
+    let coordinator_output_dir = build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
+    let coordinator_bin = coordinator_output_dir.join("aleo-setup-coordinator");
 
     // Install the dependencies for the setup coordinator nodejs proxy.
     npm_install(SETUP_COORDINATOR_DIR)?;
 
+    // Create some mpmc channels for communicating between the various
+    // components that run during the integration test.
     let (coordinator_tx, coordinator_rx) = flume::unbounded::<CoordinatorMessage>();
-    run_setup_coordinator_proxy(
+
+    // Run the nodejs proxy server for the coordinator.
+    let setup_proxy_join = run_coordinator_proxy(
         SETUP_COORDINATOR_DIR,
         coordinator_tx.clone(),
         coordinator_rx.clone(),
     )?;
-    run_setup_coordinator(setup_coordinator_bin, coordinator_tx, coordinator_rx)?;
+
+    let coordinator_config = CoordinatorConfig {
+        setup_coordinator_bin: coordinator_bin,
+        phase: SetupPhase::Development,
+    };
+
+    // Run the coordinator (which will first wait for the proxy to start).
+    run_coordinator(
+        coordinator_config,
+        coordinator_tx.clone(),
+        coordinator_rx.clone(),
+    )?;
+
+    tracing::debug!("Telling other threads to shutdown");
+    coordinator_tx
+        .send(CoordinatorMessage::Shutdown)
+        .expect("unable to send message");
+
+    setup_proxy_join.join();
 
     Ok(())
 }
