@@ -11,6 +11,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    str::FromStr,
     thread::JoinHandle,
     time::Duration,
 };
@@ -199,6 +200,7 @@ fn setup_coordinator_proxy_reader(
     Ok(())
 }
 
+/// A join handle for the threads created in [run_coordinator_proxy()]
 struct SetupProxyThreadsJoin {
     listener_join: JoinHandle<()>,
     monitor_join: JoinHandle<()>,
@@ -325,6 +327,8 @@ pub enum SetupPhase {
 /// `aleo-setup-coordinator` rocket server.
 #[derive(Debug)]
 struct CoordinatorConfig {
+    /// The location of the `aleo-setup-coordinator` repository.
+    pub crate_dir: PathBuf,
     /// The location of the `aleo-setup-coordinator` binary (including
     /// the binary name).
     pub setup_coordinator_bin: PathBuf,
@@ -348,6 +352,9 @@ impl Display for SetupPhase {
 /// Run the `aleo-setup-coordinator`. This will first wait for the
 /// nodejs proxy to start (which will publish a
 /// [CoordinatorMessage::CoordinatorProxyReady]).
+///
+/// TODO: return a thread join handle.
+/// TODO: make a monitor thread (like in the proxy).
 fn run_coordinator(
     config: CoordinatorConfig,
     coordinator_tx: Sender<CoordinatorMessage>,
@@ -371,7 +378,16 @@ fn run_coordinator(
 
     tracing::info!("Starting setup coordinator.");
 
-    Exec::cmd(config.setup_coordinator_bin).join()?;
+    Exec::cmd(std::fs::canonicalize(config.setup_coordinator_bin)?)
+        .cwd(config.crate_dir)
+        .arg(config.phase.to_string())
+        .join()?;
+
+    // TODO: wait for the `Rocket has launched from` message on
+    // STDOUT, just like how it is implemented in
+    // run_coordinator_proxy(), then send the
+    // `CoordinatorMessage::CoordinatorReady` to notify the verifier
+    // and the participants that they can start.
 
     Ok(())
 }
@@ -394,7 +410,17 @@ fn main() -> eyre::Result<()> {
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
     install_rust_toolchain(&rust_1_47_nightly)?;
 
-    // Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
+    // Clone the git repos for `aleo-setup` and
+    // `aleo-setup-coordinator`.
+    //
+    // **NOTE: currently I am commenting out these lines during
+    // development of this test**
+    //
+    // TODO: implement a command line argument that will ignore this
+    // step if the repos are already cloned, for development purposes.
+    // In the actual test it's probably good for this to fail if it's
+    // trying to overwrite a previous test, it should be starting
+    // clean.
     get_git_repository(
         "https://github.com/AleoHQ/aleo-setup-coordinator",
         SETUP_COORDINATOR_DIR,
@@ -420,6 +446,7 @@ fn main() -> eyre::Result<()> {
     )?;
 
     let coordinator_config = CoordinatorConfig {
+        crate_dir: PathBuf::from_str(SETUP_COORDINATOR_DIR)?,
         setup_coordinator_bin: coordinator_bin,
         phase: SetupPhase::Development,
     };
@@ -431,12 +458,20 @@ fn main() -> eyre::Result<()> {
         coordinator_rx.clone(),
     )?;
 
-    tracing::debug!("Telling other threads to shutdown");
+    // TODO: start the `setup1-verifier` and `setup1-contributor`.
+
+    tracing::debug!("Test complete, waiting for the other threads to shutdown safely");
+
+    // Tell the other threads to shutdown, safely terminating their
+    // child processes.
     coordinator_tx
         .send(CoordinatorMessage::Shutdown)
         .expect("unable to send message");
 
-    setup_proxy_join.join();
+    // Wait for the setup proxy threads to close after being told to shut down.
+    setup_proxy_join
+        .join()
+        .expect("error while joining setup proxy threads");
 
     Ok(())
 }
