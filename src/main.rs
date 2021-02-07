@@ -1,7 +1,10 @@
 use subprocess::Exec;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use std::{fmt::Debug, path::{Path, PathBuf}};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 /// Returns `Ok` if the `exit_status` is 0, otherwise returns an `Err`.
 fn parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::Result<()> {
@@ -79,24 +82,19 @@ impl Default for RustToolchain {
 #[tracing::instrument(level = "error")]
 fn build_rust_crate<P>(crate_dir: P, toolchain: &RustToolchain) -> eyre::Result<PathBuf>
 where
-    P: AsRef<Path> + Debug {
+    P: AsRef<Path> + Debug,
+{
     tracing::info!("Building crate");
 
-    let cmd = Exec::cmd("cargo")
-        .cwd(&crate_dir);
+    let cmd = Exec::cmd("cargo").cwd(&crate_dir);
 
     let cmd = match toolchain {
         RustToolchain::SystemDefault => cmd,
-        _ => {
-            cmd.arg(format!("+{}", toolchain))
-        }
+        _ => cmd.arg(format!("+{}", toolchain)),
     };
 
-    let exit_status = cmd
-        .arg("build")
-        .arg("--release")
-        .join()?;
-    
+    let exit_status = cmd.arg("build").arg("--release").join()?;
+
     parse_exit_status(exit_status)?;
 
     Ok(crate_dir.as_ref().join("target/release"))
@@ -119,17 +117,13 @@ fn setup_reporting() -> eyre::Result<()> {
 
 /// Install a version of the rust toolchain using `rustup`.
 fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
-    let cmd = Exec::cmd("rustup")
-        .arg("toolchain")
-        .arg("install");
+    let cmd = Exec::cmd("rustup").arg("toolchain").arg("install");
 
     let cmd = match toolchain {
-        RustToolchain::SystemDefault => {
-            Err(eyre::eyre!("Invalid argument for `toolchain`: SystemDefault"))
-        }
-        _ => {
-            Ok(cmd.arg(toolchain.to_string()))
-        }
+        RustToolchain::SystemDefault => Err(eyre::eyre!(
+            "Invalid argument for `toolchain`: SystemDefault"
+        )),
+        _ => Ok(cmd.arg(toolchain.to_string())),
     }?;
 
     let exit_status = cmd.join()?;
@@ -151,7 +145,7 @@ fn main() -> eyre::Result<()> {
         ALEO_SETUP_COORDINATOR_DIR,
     )?;
     get_git_repository("https://github.com/AleoHQ/aleo-setup", ALEO_SETUP_DIR)?;
-    
+
     build_rust_crate(ALEO_SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
 
     Ok(())
