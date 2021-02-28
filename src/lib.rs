@@ -10,7 +10,7 @@ pub mod rust;
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
 #[derive(Clone, Debug, Copy)]
-pub enum CoordinatorMessage {
+pub enum CeremonyMessage {
     /// Notify the receivers that the coordinator rocket server is
     /// ready to start receiving requests.
     CoordinatorReady,

@@ -1,8 +1,11 @@
-use std::{fmt::Debug, path::{Path, PathBuf}};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 use subprocess::Exec;
 
-use crate::process::parse_exit_status;
+use crate::process::default_parse_exit_status;
 
 /// A rust toolchain version/specification to use with `cargo` or
 /// `rustup` command line tools.
@@ -39,7 +42,6 @@ impl Default for RustToolchain {
     }
 }
 
-
 /// Install a version of the rust toolchain using `rustup`.
 pub fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
     let cmd = Exec::cmd("rustup").arg("toolchain").arg("install");
@@ -51,7 +53,7 @@ pub fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
         _ => Ok(cmd.arg(toolchain.to_string())),
     }?;
 
-    parse_exit_status(cmd.join()?)
+    default_parse_exit_status(cmd.join()?)
 }
 
 /// Build a rust crate at the specified `crate_dir` using `cargo` with
@@ -77,7 +79,7 @@ where
         .arg("--release")
         .join()
         .map_err(eyre::Error::from)
-        .and_then(parse_exit_status)?;
+        .and_then(default_parse_exit_status)?;
 
     Ok(crate_dir.as_ref().join("target/release"))
 }

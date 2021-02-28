@@ -1,5 +1,4 @@
-
-use crate::process::parse_exit_status;
+use crate::process::default_parse_exit_status;
 
 use subprocess::Exec;
 
@@ -15,5 +14,5 @@ where
         .arg("install")
         .join()
         .map_err(eyre::Error::from)
-        .and_then(parse_exit_status)
+        .and_then(default_parse_exit_status)
 }

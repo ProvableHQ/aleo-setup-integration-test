@@ -1,5 +1,14 @@
-/// Returns `Ok` if the `exit_status` is 0, otherwise returns an `Err`.
-pub fn parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::Result<()> {
+use std::{fs::File, thread::JoinHandle, time::Duration};
+
+use flume::{Receiver, Sender};
+use subprocess::{Exec, Redirection};
+use tracing::{instrument::Instrumented, Instrument};
+
+use crate::CeremonyMessage;
+
+/// Returns `Ok` if the `exit_status` is `Exited(0)` or `Signaled(15)`
+/// (terminated by the host?), otherwise returns an `Err`.
+pub fn default_parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::Result<()> {
     match exit_status {
         subprocess::ExitStatus::Exited(0) => Ok(()),
         // Terminated by the host (I'm guessing)
@@ -8,5 +17,133 @@ pub fn parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::Result<()
             "Unexpected process exit status: {:?}",
             unexpected
         )),
+    }
+}
+
+/// A join handle for the threads created in [wait_start_process()]
+pub struct MonitorProcessJoin {
+    listener_join: JoinHandle<Instrumented<()>>,
+    monitor_join: JoinHandle<Instrumented<()>>,
+}
+
+impl MonitorProcessJoin {
+    /// Join the threads
+    pub fn join(self) -> std::thread::Result<()> {
+        let _ = self.listener_join.join()?;
+        let _ = self.monitor_join.join()?;
+        Ok(())
+    }
+}
+
+/// Starts the process specified in `exec`, with `stdout` set to
+/// [Redirection::Pipe], which is fed into the specified `monitor`
+/// function which runs in a new thread. Another thread is also
+/// spawned which watches for [CeremonyMessage::Shutdown] and kills
+/// the child process if that message is received. `parse_exit_status`
+/// determines whether the returned [subprocess::ExitStatus]
+/// constitutes an error, and returns an appropriate [eyre::Result].
+pub fn monitor_process<M>(
+    exec: Exec,
+    parse_exit_status: fn(subprocess::ExitStatus) -> eyre::Result<()>,
+    ceremony_tx: Sender<CeremonyMessage>,
+    ceremony_rx: Receiver<CeremonyMessage>,
+    monitor: M,
+) -> eyre::Result<MonitorProcessJoin>
+where
+    M: Fn(File, Sender<CeremonyMessage>) + Send + Sync + 'static,
+{
+    let span = tracing::error_span!("process", exec=?exec);
+    let _guard = span.enter();
+
+    tracing::info!("Starting process");
+
+    let mut process = exec.stdout(Redirection::Pipe).popen()?;
+
+    // Extract the stdout [std::fs::File] from `process`, replacing it
+    // with a None. This is needed so we can both listen to stdout and
+    // interact with `process`'s mutable methods (to terminate it if
+    // required).
+    let mut stdout: Option<File> = None;
+    std::mem::swap(&mut process.stdout, &mut stdout);
+    let stdout = stdout.ok_or_else(|| eyre::eyre!("Unable to obtain nodejs process stdout"))?;
+
+    // Thread to run the `setup_coordinator_proxy_reader()` function.
+    let coordinator_tx_listener = ceremony_tx.clone();
+    let listener_join = std::thread::spawn(move || {
+        {
+            let span = tracing::error_span!("listener");
+            let _guard = span.enter();
+
+            monitor(stdout, coordinator_tx_listener.clone());
+
+            tracing::debug!("thread closing gracefully")
+        }
+        .in_current_span()
+    });
+
+    // This thread monitors messages, and terminates the nodejs
+    // process if a `Shutdown` message is received. It also monitors
+    // the exit status of the process, and if there was an error it
+    // will request a `Shutdown` and panic with the error.
+    let monitor_join = std::thread::spawn(move || {
+        loop {
+            let span = tracing::error_span!("monitor");
+            let _guard = span.enter();
+
+            // Sleep occasionally because otherwise this loop will run too fast.
+            std::thread::sleep(Duration::from_millis(100));
+
+            match ceremony_rx.try_recv() {
+                Ok(message) => match message {
+                    CeremonyMessage::Shutdown => {
+                        tracing::debug!("Telling the nodejs proxy server process to terminate");
+                        process
+                            .terminate()
+                            .expect("error terminating nodejs proxy server process");
+                    }
+                    _ => {}
+                },
+                Err(flume::TryRecvError::Disconnected) => {
+                    panic!("coordinator_rx is disconnected");
+                }
+                Err(flume::TryRecvError::Empty) => {}
+            }
+
+            if let Some(exit_result) = process.poll().map(parse_exit_status) {
+                tracing::debug!("process exited");
+                match exit_result {
+                    Ok(_) => break,
+                    Err(error) => {
+                        ceremony_tx
+                            .send(CeremonyMessage::Shutdown)
+                            .expect("Error sending shutdown message");
+                        panic!("Error while running process: {}", error);
+                    }
+                }
+            }
+        }
+        .in_current_span()
+    });
+
+    Ok(MonitorProcessJoin {
+        listener_join,
+        monitor_join,
+    })
+}
+
+/// Create a monitor function to be used with [monitor_process()] that
+/// may return an [eyre::Result], if the result is an `Err` then a
+/// panic will occur and the ceremony will shut down with a
+/// [CeremonyMessage::Shutdown].
+pub fn fallible_monitor<M>(fallible_monitor: M) -> impl Fn(File, Sender<CeremonyMessage>)
+where
+    M: Fn(File, Sender<CeremonyMessage>) -> eyre::Result<()> + Send + Sync + 'static,
+{
+    move |stdout: File, coordinator_tx: Sender<CeremonyMessage>| {
+        if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone()) {
+            // tell the other threads to shut down
+            let _ = coordinator_tx.send(CeremonyMessage::Shutdown);
+            panic!("Error while running process monitor: {}", error);
+        }
     }
 }

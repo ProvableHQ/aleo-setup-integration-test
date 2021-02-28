@@ -1,16 +1,16 @@
 //! Integration test for `aleo-setup-coordinator` and `aleo-setup`'s
 //! `setup1-contributor` and `setup1-verifier`.
 
-use aleo_setup_integration_test::{CoordinatorMessage, SetupPhase, coordinator_proxy::run_coordinator_proxy, npm::npm_install, process::parse_exit_status, rust::{RustToolchain, build_rust_crate, install_rust_toolchain}};
-use flume::{Receiver, Sender};
-use subprocess::Exec;
+use aleo_setup_integration_test::{
+    coordinator::{run_coordinator, CoordinatorConfig},
+    coordinator_proxy::run_coordinator_proxy,
+    npm::npm_install,
+    rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
+    CeremonyMessage, SetupPhase,
+};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use std::{
-    fmt::Debug,
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{path::PathBuf, str::FromStr};
 
 /// Set up [tracing] and [color-eyre](color_eyre).
 fn setup_reporting() -> eyre::Result<()> {
@@ -23,65 +23,6 @@ fn setup_reporting() -> eyre::Result<()> {
         .with(fmt_layer)
         .with(error_layer)
         .init();
-
-    Ok(())
-}
-
-/// Configuration for the [run_coordinator()] function to run
-/// `aleo-setup-coordinator` rocket server.
-#[derive(Debug)]
-struct CoordinatorConfig {
-    /// The location of the `aleo-setup-coordinator` repository.
-    pub crate_dir: PathBuf,
-    /// The location of the `aleo-setup-coordinator` binary (including
-    /// the binary name).
-    pub setup_coordinator_bin: PathBuf,
-    /// What phase of the setup ceremony to run.
-    pub phase: SetupPhase,
-}
-
-
-/// Run the `aleo-setup-coordinator`. This will first wait for the
-/// nodejs proxy to start (which will publish a
-/// [CoordinatorMessage::CoordinatorProxyReady]).
-///
-/// TODO: return a thread join handle.
-/// TODO: make a monitor thread (like in the proxy).
-fn run_coordinator(
-    config: CoordinatorConfig,
-    coordinator_tx: Sender<CoordinatorMessage>,
-    coordinator_rx: Receiver<CoordinatorMessage>,
-) -> eyre::Result<()> {
-    let span = tracing::error_span!("coordinator");
-    let _guard = span.enter();
-
-    tracing::info!("Setup coordinator waiting for nodejs proxy to start.");
-
-    // Wait for the coordinator proxy to report that it's ready.
-    for message in coordinator_rx.recv() {
-        match message {
-            CoordinatorMessage::CoordinatorProxyReady => break,
-            CoordinatorMessage::Shutdown => return Ok(()),
-            _ => {
-                tracing::error!("Unexpected message: {:?}", message);
-            }
-        }
-    }
-
-    tracing::info!("Starting setup coordinator.");
-
-    Exec::cmd(std::fs::canonicalize(config.setup_coordinator_bin)?)
-        .cwd(config.crate_dir)
-        .arg(config.phase.to_string())
-        .join()
-        .map_err(eyre::Error::from)
-        .and_then(parse_exit_status)?;
-
-    // TODO: wait for the `Rocket has launched from` message on
-    // STDOUT, just like how it is implemented in
-    // run_coordinator_proxy(), then send the
-    // `CoordinatorMessage::CoordinatorReady` to notify the verifier
-    // and the participants that they can start.
 
     Ok(())
 }
@@ -130,7 +71,7 @@ fn main() -> eyre::Result<()> {
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
-    let (coordinator_tx, coordinator_rx) = flume::unbounded::<CoordinatorMessage>();
+    let (coordinator_tx, coordinator_rx) = flume::unbounded::<CeremonyMessage>();
 
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_join = run_coordinator_proxy(
@@ -159,7 +100,7 @@ fn main() -> eyre::Result<()> {
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
     coordinator_tx
-        .send(CoordinatorMessage::Shutdown)
+        .send(CeremonyMessage::Shutdown)
         .expect("unable to send message");
 
     // Wait for the setup proxy threads to close after being told to shut down.
