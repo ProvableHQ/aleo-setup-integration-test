@@ -6,7 +6,7 @@ use crate::{
 };
 
 use eyre::Context;
-use flume::{Receiver, Sender};
+use mpmc_bus::{Receiver, Sender};
 use regex::Regex;
 use subprocess::Exec;
 
@@ -82,7 +82,7 @@ fn setup_coordinator_proxy_monitor(
         match line_result {
             Ok(line) => {
                 if start_re.is_match(&line) {
-                    ceremony_tx.send(CeremonyMessage::CoordinatorProxyReady)?;
+                    ceremony_tx.broadcast(CeremonyMessage::CoordinatorProxyReady)?;
                 }
 
                 // Pipe the process output to tracing.

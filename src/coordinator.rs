@@ -5,7 +5,7 @@ use std::{
 };
 
 use eyre::Context;
-use flume::{Receiver, Sender};
+use mpmc_bus::{Receiver, Sender};
 use regex::Regex;
 use subprocess::Exec;
 
@@ -32,33 +32,13 @@ pub struct CoordinatorConfig {
 /// Run the `aleo-setup-coordinator`. This will first wait for the
 /// nodejs proxy to start (which will publish a
 /// [CoordinatorMessage::CoordinatorProxyReady]).
-///
-/// TODO: return a thread join handle.
-/// TODO: make a monitor thread (like in the proxy).
 pub fn run_coordinator(
     config: CoordinatorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
-    ceremony_rx: Receiver<CeremonyMessage>,
+    mut ceremony_rx: Receiver<CeremonyMessage>,
 ) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
-
-    tracing::info!("Setup coordinator waiting for nodejs proxy to start.");
-
-    // Wait for the coordinator proxy to report that it's ready.
-    for message in ceremony_rx.recv() {
-        match message {
-            CeremonyMessage::CoordinatorProxyReady => break,
-            CeremonyMessage::Shutdown => {
-                return Err(eyre::eyre!(
-                    "Ceremony shutdown before coordinator could start."
-                ))
-            }
-            _ => {
-                tracing::error!("Unexpected message: {:?}", message);
-            }
-        }
-    }
 
     tracing::info!("Starting setup coordinator.");
 
@@ -101,7 +81,7 @@ fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> ey
         match line_result {
             Ok(line) => {
                 if start_re.is_match(&line) {
-                    ceremony_tx.send(CeremonyMessage::CoordinatorReady)?;
+                    ceremony_tx.broadcast(CeremonyMessage::CoordinatorReady)?;
                 }
 
                 // Pipe the process output to tracing.

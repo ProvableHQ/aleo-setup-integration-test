@@ -1,6 +1,17 @@
+# Rust build directory
 /target
+
+# Integration test checked out repositories
 aleo-setup/
 aleo-setup-coordinator/
+
+# Cooridinator ceremony transcript
 transcript/
+
+# Log files
 coordinator_log.txt
 coordinator_proxy_log.txt
+contributor_log.txt
+
+# Key files
+contributor_key.json

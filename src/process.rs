@@ -1,8 +1,7 @@
 use std::{fs::File, thread::JoinHandle, time::Duration};
 
-use flume::{Receiver, Sender};
+use mpmc_bus::{Receiver, Sender, TryRecvError};
 use subprocess::{Exec, Redirection};
-use tracing::{instrument::Instrumented, Instrument};
 
 use crate::CeremonyMessage;
 
@@ -47,13 +46,13 @@ pub fn run_monitor_process<M>(
     exec: Exec,
     parse_exit_status: fn(subprocess::ExitStatus) -> eyre::Result<()>,
     ceremony_tx: Sender<CeremonyMessage>,
-    ceremony_rx: Receiver<CeremonyMessage>,
+    mut ceremony_rx: Receiver<CeremonyMessage>,
     monitor: M,
 ) -> eyre::Result<MonitorProcessJoin>
 where
     M: Fn(File, Sender<CeremonyMessage>) + Send + Sync + 'static,
 {
-    tracing::info!("Starting process");
+    tracing::info!("Starting process.");
 
     let mut process = exec
         .stdout(Redirection::Pipe)
@@ -94,28 +93,28 @@ where
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
                     CeremonyMessage::Shutdown => {
-                        tracing::debug!("Telling the process to terminate.");
+                        tracing::info!("Telling the process to terminate.");
                         process
                             .terminate()
                             .expect("Error while terminating process.");
                     }
                     _ => {}
                 },
-                Err(flume::TryRecvError::Disconnected) => {
-                    panic!("`ceremony_rx` is disconnected");
+                Err(TryRecvError::Disconnected) => {
+                    panic!("`ceremony_rx` disconnected");
                 }
-                Err(flume::TryRecvError::Empty) => {}
+                Err(TryRecvError::Empty) => {}
             }
 
             if let Some(exit_result) = process.poll().map(parse_exit_status) {
                 match exit_result {
                     Ok(_) => {
-                        tracing::info!("Process successfully exited");
+                        tracing::info!("Process successfully exited.");
                         break;
                     }
                     Err(error) => {
                         ceremony_tx
-                            .send(CeremonyMessage::Shutdown)
+                            .broadcast(CeremonyMessage::Shutdown)
                             .expect("Error sending shutdown message");
                         panic!("Error while running process: {}", error);
                     }
@@ -143,7 +142,7 @@ where
     move |stdout: File, coordinator_tx: Sender<CeremonyMessage>| {
         if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone()) {
             // tell the other threads to shut down
-            let _ = coordinator_tx.send(CeremonyMessage::Shutdown);
+            let _ = coordinator_tx.broadcast(CeremonyMessage::Shutdown);
             // TODO: change this into something that records the fatal message, and requests a shutdown.
             // when all threads/processes have shutdown, then proceed to panic.
             panic!("Error while running process monitor: {}", error);
