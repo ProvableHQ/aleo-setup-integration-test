@@ -111,7 +111,7 @@ fn main() -> eyre::Result<()> {
     // Wait for the coordinator proxy threads to close after being told to shut down.
     coordinator_proxy_join
         .join()
-        .expect("error while joining setup proxy threads");
+        .expect("error while joining coordinator proxy threads");
 
     Ok(())
 }
