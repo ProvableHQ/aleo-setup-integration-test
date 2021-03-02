@@ -87,7 +87,7 @@ fn main() -> eyre::Result<()> {
     };
 
     // Run the coordinator (which will first wait for the proxy to start).
-    run_coordinator(
+    let coordinator_join = run_coordinator(
         coordinator_config,
         coordinator_tx.clone(),
         coordinator_rx.clone(),
@@ -103,7 +103,12 @@ fn main() -> eyre::Result<()> {
         .send(CeremonyMessage::Shutdown)
         .expect("unable to send message");
 
-    // Wait for the setup proxy threads to close after being told to shut down.
+    // Wait for the coordinator threads to close after being told to shut down.
+    coordinator_join
+        .join()
+        .expect("error while joining coordinator threads");
+
+    // Wait for the coordinator proxy threads to close after being told to shut down.
     coordinator_proxy_join
         .join()
         .expect("error while joining setup proxy threads");

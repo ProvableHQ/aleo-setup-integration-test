@@ -2,3 +2,5 @@
 aleo-setup/
 aleo-setup-coordinator/
 transcript/
+coordinator_log.txt
+coordinator_proxy_log.txt

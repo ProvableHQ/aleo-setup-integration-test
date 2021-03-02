@@ -1,16 +1,19 @@
 use crate::{
-    process::{default_parse_exit_status, fallible_monitor, monitor_process, MonitorProcessJoin},
+    process::{
+        default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
+    },
     CeremonyMessage,
 };
 
+use eyre::Context;
 use flume::{Receiver, Sender};
 use regex::Regex;
 use subprocess::Exec;
 
 use std::{
     fmt::Debug,
-    fs::File,
-    io::{BufRead, BufReader},
+    fs::{File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Write},
     path::Path,
 };
 
@@ -36,7 +39,7 @@ where
         .cwd(setup_coordinator_repo)
         .arg("server.js");
 
-    monitor_process(
+    run_monitor_process(
         exec,
         default_parse_exit_status,
         ceremony_tx,
@@ -52,11 +55,26 @@ where
 /// pipes the stdout from the nodejs proxy to [tracing::debug!()]
 fn setup_coordinator_proxy_monitor(
     stdout: File,
-    coordinator_tx: Sender<CeremonyMessage>,
+    ceremony_tx: Sender<CeremonyMessage>,
 ) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 
     let start_re = Regex::new("Websocket listening on.*")?;
+
+    let log_path = Path::new("coordinator_proxy_log.txt");
+    let current_dir = std::env::current_dir()?;
+    let log_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(log_path)
+        .wrap_err_with(|| {
+            format!(
+                "Unable to open log file {:?} in {:?}",
+                log_path, current_dir
+            )
+        })?;
+
+    let mut buf_log = BufWriter::new(log_file);
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.
@@ -64,15 +82,20 @@ fn setup_coordinator_proxy_monitor(
         match line_result {
             Ok(line) => {
                 if start_re.is_match(&line) {
-                    coordinator_tx.send(CeremonyMessage::CoordinatorProxyReady)?;
+                    ceremony_tx.send(CeremonyMessage::CoordinatorProxyReady)?;
                 }
 
-                // Pipe the process output to tracing
+                // Pipe the process output to tracing.
                 tracing::debug!("{}", line);
+
+                // Write to log file.
+                buf_log.write(line.as_ref())?;
+                buf_log.write("\n".as_ref())?;
             }
-            Err(error) => {
-                tracing::error!("Error reading line from pipe to nodejs process: {}", error)
-            }
+            Err(error) => tracing::error!(
+                "Error reading line from pipe to coordinator process: {}",
+                error
+            ),
         }
     }
 

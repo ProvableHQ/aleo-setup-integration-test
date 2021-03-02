@@ -21,9 +21,10 @@ pub fn default_parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::R
 }
 
 /// A join handle for the threads created in [wait_start_process()]
+#[must_use]
 pub struct MonitorProcessJoin {
-    listener_join: JoinHandle<Instrumented<()>>,
-    monitor_join: JoinHandle<Instrumented<()>>,
+    listener_join: JoinHandle<()>,
+    monitor_join: JoinHandle<()>,
 }
 
 impl MonitorProcessJoin {
@@ -42,7 +43,7 @@ impl MonitorProcessJoin {
 /// the child process if that message is received. `parse_exit_status`
 /// determines whether the returned [subprocess::ExitStatus]
 /// constitutes an error, and returns an appropriate [eyre::Result].
-pub fn monitor_process<M>(
+pub fn run_monitor_process<M>(
     exec: Exec,
     parse_exit_status: fn(subprocess::ExitStatus) -> eyre::Result<()>,
     ceremony_tx: Sender<CeremonyMessage>,
@@ -52,12 +53,12 @@ pub fn monitor_process<M>(
 where
     M: Fn(File, Sender<CeremonyMessage>) + Send + Sync + 'static,
 {
-    let span = tracing::error_span!("process", exec=?exec);
-    let _guard = span.enter();
-
     tracing::info!("Starting process");
 
-    let mut process = exec.stdout(Redirection::Pipe).popen()?;
+    let mut process = exec
+        .stdout(Redirection::Pipe)
+        .stderr(Redirection::Merge)
+        .popen()?;
 
     // Extract the stdout [std::fs::File] from `process`, replacing it
     // with a None. This is needed so we can both listen to stdout and
@@ -65,54 +66,53 @@ where
     // required).
     let mut stdout: Option<File> = None;
     std::mem::swap(&mut process.stdout, &mut stdout);
-    let stdout = stdout.ok_or_else(|| eyre::eyre!("Unable to obtain nodejs process stdout"))?;
+    let stdout = stdout.ok_or_else(|| eyre::eyre!("Unable to obtain process `stdout`."))?;
 
     // Thread to run the `setup_coordinator_proxy_reader()` function.
     let coordinator_tx_listener = ceremony_tx.clone();
+    let listener_span = tracing::error_span!("listener");
     let listener_join = std::thread::spawn(move || {
-        {
-            let span = tracing::error_span!("listener");
-            let _guard = span.enter();
+        let _guard = listener_span.enter();
 
-            monitor(stdout, coordinator_tx_listener.clone());
+        monitor(stdout, coordinator_tx_listener.clone());
 
-            tracing::debug!("thread closing gracefully")
-        }
-        .in_current_span()
+        tracing::debug!("Thread closing gracefully.")
     });
 
     // This thread monitors messages, and terminates the nodejs
     // process if a `Shutdown` message is received. It also monitors
     // the exit status of the process, and if there was an error it
     // will request a `Shutdown` and panic with the error.
+    let monitor_span = tracing::error_span!("monitor");
     let monitor_join = std::thread::spawn(move || {
-        loop {
-            let span = tracing::error_span!("monitor");
-            let _guard = span.enter();
+        let _guard = monitor_span.enter();
 
+        loop {
             // Sleep occasionally because otherwise this loop will run too fast.
             std::thread::sleep(Duration::from_millis(100));
 
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
                     CeremonyMessage::Shutdown => {
-                        tracing::debug!("Telling the nodejs proxy server process to terminate");
+                        tracing::debug!("Telling the process to terminate.");
                         process
                             .terminate()
-                            .expect("error terminating nodejs proxy server process");
+                            .expect("Error while terminating process.");
                     }
                     _ => {}
                 },
                 Err(flume::TryRecvError::Disconnected) => {
-                    panic!("coordinator_rx is disconnected");
+                    panic!("`ceremony_rx` is disconnected");
                 }
                 Err(flume::TryRecvError::Empty) => {}
             }
 
             if let Some(exit_result) = process.poll().map(parse_exit_status) {
-                tracing::debug!("process exited");
                 match exit_result {
-                    Ok(_) => break,
+                    Ok(_) => {
+                        tracing::info!("Process successfully exited");
+                        break;
+                    }
                     Err(error) => {
                         ceremony_tx
                             .send(CeremonyMessage::Shutdown)
@@ -122,7 +122,8 @@ where
                 }
             }
         }
-        .in_current_span()
+
+        tracing::debug!("Thread closing gracefully.")
     });
 
     Ok(MonitorProcessJoin {
@@ -143,6 +144,8 @@ where
         if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone()) {
             // tell the other threads to shut down
             let _ = coordinator_tx.send(CeremonyMessage::Shutdown);
+            // TODO: change this into something that records the fatal message, and requests a shutdown.
+            // when all threads/processes have shutdown, then proceed to panic.
             panic!("Error while running process monitor: {}", error);
         }
     }
