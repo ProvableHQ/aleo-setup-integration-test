@@ -55,6 +55,11 @@ pub fn run_coordinator(
     )
 }
 
+/// Monitor the setup coordinator. Watches for the `Rocket has
+/// launched` message, which when it occurs emits a
+/// [CeremonyMessage::CoordinatorReady] message. Pipes the
+/// `stderr`/`stdout` to the [tracing::debug!()], and
+/// `coordinator_log.txt` log file.
 fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 

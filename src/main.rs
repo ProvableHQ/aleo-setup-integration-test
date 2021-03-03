@@ -1,18 +1,29 @@
 //! Integration test for `aleo-setup-coordinator` and `aleo-setup`'s
 //! `setup1-contributor` and `setup1-verifier`.
 
-use aleo_setup_integration_test::{CeremonyMessage, SetupPhase, contributor::generate_contributor_key, coordinator::{run_coordinator, CoordinatorConfig}, coordinator_proxy::run_coordinator_proxy, npm::npm_install, rust::{build_rust_crate, install_rust_toolchain, RustToolchain}, wait_for_messages};
+use aleo_setup_integration_test::{
+    contributor::generate_contributor_key,
+    coordinator::{run_coordinator, CoordinatorConfig},
+    coordinator_proxy::run_coordinator_proxy,
+    npm::npm_install,
+    rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
+    CeremonyMessage, SetupPhase,
+};
 use mpmc_bus::Bus;
-use tracing_subscriber::{EnvFilter, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
+};
 
-use std::{path::{Path, PathBuf}, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 /// Set up [tracing] and [color-eyre](color_eyre).
 fn setup_reporting() -> eyre::Result<()> {
     color_eyre::install()?;
 
-    let filter_layer = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("info"))?;
+    let filter_layer = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
     let fmt_layer = tracing_subscriber::fmt::layer();
     let error_layer = tracing_error::ErrorLayer::default();
 
@@ -71,13 +82,14 @@ fn main() -> eyre::Result<()> {
     // npm_install(SETUP_COORDINATOR_DIR)?;
 
     // Build the setup1-contributor Rust project.
-    let setup1_contributor_output_dir = build_rust_crate(Path::new(SETUP_DIR).join("setup1-contributor"), &rust_1_47_nightly)?;
+    let setup1_contributor_output_dir = build_rust_crate(
+        Path::new(SETUP_DIR).join("setup1-contributor"),
+        &rust_1_47_nightly,
+    )?;
     let setup1_contributor_bin_path = setup1_contributor_output_dir.join("setup1-contributor");
 
     // Generate the key file used for `setup1-contributor`.
     generate_contributor_key(setup1_contributor_bin_path, CONTRIBUTOR_KEY_PATH)?;
-
-
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
@@ -99,11 +111,8 @@ fn main() -> eyre::Result<()> {
     };
 
     // Run the coordinator (which will first wait for the proxy to start).
-    let coordinator_join = run_coordinator(
-        coordinator_config,
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-    )?;
+    let coordinator_join =
+        run_coordinator(coordinator_config, ceremony_tx.clone(), ceremony_rx.clone())?;
 
     tracing::info!("Coordinator started.");
 
@@ -111,10 +120,9 @@ fn main() -> eyre::Result<()> {
 
     // wait_for_message(ceremony_rx.clone(), CeremonyMessage::CoordinatorReady);
     // wait_for_message(ceremony_rx.clone(), CeremonyMessage::CoordinatorProxyReady);
-    
 
     // Tell the other threads to shutdown, safely terminating their
-    // child processes. 
+    // child processes.
     ceremony_tx
         .broadcast(CeremonyMessage::Shutdown)
         .expect("unable to send message");
