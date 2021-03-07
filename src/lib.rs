@@ -15,6 +15,8 @@ pub mod verifier;
 /// in its own thread which will listen to these messages.
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub enum CeremonyMessage {
+    /// Notify the receivers that the specified round has started.
+    RoundStarted(u64),
     /// Notify the receivers that the specified round has finished
     /// sucessfully.
     RoundFinished(u64),

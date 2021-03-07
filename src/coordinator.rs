@@ -72,8 +72,14 @@ fn monitor_coordinator(
     let buf_pipe = BufReader::new(stdout);
 
     let start_re = Regex::new("Rocket has launched.*")?;
+    let round1_started_re = Regex::new(".*Advanced ceremony to round 1.*")?;
     let round1_finished_re = Regex::new(".*Round 1 is finished.*")?;
     let round1_aggregated_re = Regex::new(".*Round 1 is aggregated.*")?;
+
+    let mut started = false;
+    let mut round1_started = false;
+    let mut round1_finished = false;
+    let mut round1_aggregated = false;
 
     let mut log_file = OpenOptions::new()
         .append(true)
@@ -86,16 +92,27 @@ fn monitor_coordinator(
     for line_result in buf_pipe.lines() {
         match line_result {
             Ok(line) => {
-                if start_re.is_match(&line) {
+                // TODO: refactor this logic into a state machine to
+                // ensure that the round cannot be detected as
+                // finished before it has started.
+                if !started && start_re.is_match(&line) {
                     ceremony_tx.broadcast(CeremonyMessage::CoordinatorReady)?;
+                    started = true;
                 }
 
-                if round1_finished_re.is_match(&line) {
+                if !round1_started && round1_started_re.is_match(&line) {
+                    ceremony_tx.broadcast(CeremonyMessage::RoundStarted(1))?;
+                    round1_started = true;
+                }
+
+                if !round1_finished && round1_finished_re.is_match(&line) {
                     ceremony_tx.broadcast(CeremonyMessage::RoundFinished(1))?;
+                    round1_finished = true;
                 }
 
-                if round1_aggregated_re.is_match(&line) {
+                if !round1_aggregated && round1_aggregated_re.is_match(&line) {
                     ceremony_tx.broadcast(CeremonyMessage::RoundAggregated(1))?;
+                    round1_aggregated = true;
                 }
 
                 // Pipe the process output to tracing.

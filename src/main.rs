@@ -145,6 +145,12 @@ fn main() -> eyre::Result<()> {
         ceremony_rx.clone(),
     );
 
+    let round1_started = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundStarted(1)],
+        CeremonyMessage::Shutdown,
+        ceremony_rx.clone(),
+    );
+
     let round1_finished = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundFinished(1)],
         CeremonyMessage::Shutdown,
@@ -206,6 +212,17 @@ fn main() -> eyre::Result<()> {
         log_dir_path.to_path_buf(),
     )?;
 
+    tracing::info!("Waiting for round 1 to start.");
+
+    round1_started
+        .join()
+        .wrap_err("Error while waiting for round 1 to finish")?;
+
+    tracing::info!("Round 1 has started!");
+
+    // TODO: currently this message isn't displayed until the
+    // aggregation is complete. Perhaps this could be implemented by
+    // checking the round's state.json file.
     round1_finished
         .join()
         .wrap_err("Error while waiting for round 1 to finish")?;
