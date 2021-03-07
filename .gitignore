@@ -9,7 +9,8 @@ aleo-setup-coordinator/
 transcript/
 
 # Log files
-log/
+logs/
+aleo-setup.log
 
 # Key files
 keys/

@@ -1,5 +1,6 @@
 use std::{fs::File, thread::JoinHandle, time::Duration};
 
+use eyre::Context;
 use mpmc_bus::{Receiver, Sender, TryRecvError};
 use subprocess::{Exec, Redirection};
 
@@ -57,7 +58,8 @@ where
     let mut process = exec
         .stdout(Redirection::Pipe)
         .stderr(Redirection::Merge)
-        .popen()?;
+        .popen()
+        .wrap_err("Error opening process")?;
 
     // Extract the stdout [std::fs::File] from `process`, replacing it
     // with a None. This is needed so we can both listen to stdout and

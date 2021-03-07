@@ -37,7 +37,7 @@ pub fn run_coordinator_proxy(
         .cwd(setup_coordinator_repo)
         .arg("server.js");
 
-    let log_file_path = log_dir_path.join("coordinator_proxy_log.txt");
+    let log_file_path = log_dir_path.join("coordinator_proxy.log");
 
     run_monitor_process(
         exec,

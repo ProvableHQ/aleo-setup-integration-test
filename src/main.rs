@@ -7,6 +7,7 @@ use aleo_setup_integration_test::{
     coordinator_proxy::run_coordinator_proxy,
     npm::npm_install,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
+    verifier::run_verifier,
     CeremonyMessage, MessageWaiter, SetupPhase,
 };
 use eyre::Context;
@@ -39,16 +40,20 @@ fn setup_reporting() -> eyre::Result<()> {
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
-const SETUP_COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
 
 /// The directory that the `aleo-setup` repository is cloned to.
 const SETUP_DIR: &str = "aleo-setup";
+
+/// URL used by the contributors and verifiers to connect to the
+/// coordinator.
+const COORDINATOR_API_URL: &str = "http://localhost:9000";
 
 /// Path to contributor 1's key file.
 const CONTRIBUTOR1_KEY_PATH: &str = "contributor1_key.json";
 
 /// Path to where the log files are stored.
-const LOG_DIR: &str = "log";
+const LOG_DIR: &str = "logs";
 
 /// Path to where the key files are stored.
 const KEYS_DIR: &str = "keys";
@@ -58,6 +63,8 @@ const KEYS_DIR: &str = "keys";
 /// is run.
 fn main() -> eyre::Result<()> {
     setup_reporting()?;
+
+    let setup_phase = SetupPhase::Development;
 
     // Create the log dir if it doesn't yet exist.
     let log_dir_path = Path::new(LOG_DIR);
@@ -94,8 +101,8 @@ fn main() -> eyre::Result<()> {
     // get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
 
     // Build the setup coordinator Rust project.
-    build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
-    let coordinator_bin_path = Path::new(SETUP_COORDINATOR_DIR)
+    build_rust_crate(COORDINATOR_DIR, &rust_1_47_nightly)?;
+    let coordinator_bin_path = Path::new(COORDINATOR_DIR)
         .join("target/release")
         .join("aleo-setup-coordinator");
 
@@ -108,9 +115,15 @@ fn main() -> eyre::Result<()> {
         &rust_1_47_nightly,
     )?;
 
-    let setup_output_dir = Path::new(SETUP_DIR).join("target/release");
+    // Build the setup1-verifier Rust project.
+    build_rust_crate(
+        Path::new(SETUP_DIR).join("setup1-verifier"),
+        &rust_1_47_nightly,
+    )?;
 
-    let setup1_contributor_bin_path = setup_output_dir.join("aleo-setup-contributor");
+    // Output directory for setup1-verifier and setup1-contributor
+    // projects.
+    let setup_output_dir = Path::new(SETUP_DIR).join("target/release");
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
@@ -118,8 +131,9 @@ fn main() -> eyre::Result<()> {
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
+    let contributor_bin_path = setup_output_dir.join("aleo-setup-contributor");
     let contributor1_key_file_path = keys_dir_path.join("contributor1-key.json");
-    generate_contributor_key(&setup1_contributor_bin_path, &contributor1_key_file_path)?;
+    generate_contributor_key(&contributor_bin_path, &contributor1_key_file_path)?;
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -131,18 +145,30 @@ fn main() -> eyre::Result<()> {
         ceremony_rx.clone(),
     );
 
+    let round1_finished = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundFinished(1)],
+        CeremonyMessage::Shutdown,
+        ceremony_rx.clone(),
+    );
+
+    let round1_aggregated = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundAggregated(1)],
+        CeremonyMessage::Shutdown,
+        ceremony_rx.clone(),
+    );
+
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_join = run_coordinator_proxy(
-        SETUP_COORDINATOR_DIR,
+        COORDINATOR_DIR,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
         log_dir_path.to_path_buf(),
     )?;
 
     let coordinator_config = CoordinatorConfig {
-        crate_dir: PathBuf::from_str(SETUP_COORDINATOR_DIR)?,
+        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
         setup_coordinator_bin: coordinator_bin_path,
-        phase: SetupPhase::Development,
+        phase: setup_phase,
     };
 
     // Run the coordinator.
@@ -161,24 +187,52 @@ fn main() -> eyre::Result<()> {
     tracing::info!("Coordinator started.");
 
     let contributor_join = run_contributor(
-        setup1_contributor_bin_path,
+        contributor_bin_path,
         &contributor1_key_file_path,
-        SetupPhase::Development,
+        setup_phase,
+        COORDINATOR_API_URL.to_string(),
         ceremony_tx.clone(),
         ceremony_rx.clone(),
         log_dir_path.to_path_buf(),
     )?;
-    contributor_join
-        .join()
-        .expect("error while joining contributor");
 
-    // TODO: start the `setup1-verifier`.
+    let verifier_bin_path = setup_output_dir.join("setup1-verifier");
+    let verifier_join = run_verifier(
+        verifier_bin_path,
+        setup_phase,
+        COORDINATOR_API_URL.to_string(),
+        ceremony_tx.clone(),
+        ceremony_rx.clone(),
+        log_dir_path.to_path_buf(),
+    )?;
+
+    round1_finished
+        .join()
+        .wrap_err("Error while waiting for round 1 to finish")?;
+
+    tracing::info!("Round 1 Finished (waiting for aggregation to complete).");
+
+    round1_aggregated
+        .join()
+        .wrap_err("Error while waiting for round 1 to aggregate")?;
+
+    tracing::info!("Round 1 Aggregated, test complete.");
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
     ceremony_tx
         .broadcast(CeremonyMessage::Shutdown)
         .expect("unable to send message");
+
+    // Wait for contributor threads to close after being told to shut down.
+    contributor_join
+        .join()
+        .expect("error while joining contributor threads");
+
+    // Wait for verifier threads to close after being told to shut down.
+    verifier_join
+        .join()
+        .expect("error while joining verifier threads");
 
     // Wait for the coordinator threads to close after being told to shut down.
     coordinator_join

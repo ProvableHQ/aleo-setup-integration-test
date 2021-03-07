@@ -47,7 +47,7 @@ pub fn run_coordinator(
         .cwd(config.crate_dir)
         .arg(config.phase.to_string());
 
-    let log_file_path = log_dir_path.join("coordinator_log.txt");
+    let log_file_path = log_dir_path.join("coordinator.log");
     run_monitor_process(
         exec,
         default_parse_exit_status,
@@ -72,6 +72,8 @@ fn monitor_coordinator(
     let buf_pipe = BufReader::new(stdout);
 
     let start_re = Regex::new("Rocket has launched.*")?;
+    let round1_finished_re = Regex::new(".*Round 1 is finished.*")?;
+    let round1_aggregated_re = Regex::new(".*Round 1 is aggregated.*")?;
 
     let mut log_file = OpenOptions::new()
         .append(true)
@@ -86,6 +88,14 @@ fn monitor_coordinator(
             Ok(line) => {
                 if start_re.is_match(&line) {
                     ceremony_tx.broadcast(CeremonyMessage::CoordinatorReady)?;
+                }
+
+                if round1_finished_re.is_match(&line) {
+                    ceremony_tx.broadcast(CeremonyMessage::RoundFinished(1))?;
+                }
+
+                if round1_aggregated_re.is_match(&line) {
+                    ceremony_tx.broadcast(CeremonyMessage::RoundAggregated(1))?;
                 }
 
                 // Pipe the process output to tracing.

@@ -7,7 +7,6 @@ use crate::{
 
 use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
-use serde::Deserialize;
 
 use std::{
     ffi::OsStr,
@@ -16,43 +15,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Deserialize)]
-pub struct ContributorKey {
-    #[serde(rename = "encryptedSeed")]
-    pub encrypted_seed: String,
-    /// Aleo address
-    pub address: String,
-}
+const VERIFIER_VIEW_KEY: &str = "AViewKey1qSVA1womAfkkGHzBxeptAz781b9stjaTj9fFnEU2TC47";
 
-/// Use `setup1-contributor` to generate the contributor key file used
-/// in [run_contributor()].
-pub fn generate_contributor_key<PB, PK>(
-    contributor_bin_path: PB,
-    key_file_path: PK,
-) -> eyre::Result<ContributorKey>
-where
-    PB: AsRef<OsStr> + std::fmt::Debug,
-    PK: AsRef<OsStr>,
-{
-    tracing::info!("Generating contributor key.");
-
-    subprocess::Exec::cmd(contributor_bin_path)
-        .arg("generate")
-        .args(&["--passphrase", "test"]) // <COORDINATOR_API_URL>
-        .arg(key_file_path.as_ref()) // <KEYS_PATH>
-        .join()
-        .map_err(eyre::Error::from)
-        .and_then(default_parse_exit_status)?;
-
-    let key_file = File::open(Path::new(&key_file_path))?;
-    let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
-    Ok(contributor_key)
-}
-
-/// Run the `setup1-contributor`.
-pub fn run_contributor<PB, PK>(
-    contributor_bin_path: PB,
-    key_file_path: PK,
+/// Run the `setup1-verifier`.
+pub fn run_verifier<PB>(
+    verifier_bin_path: PB,
     setup_phase: SetupPhase,
     coordinator_api_url: String,
     ceremony_tx: Sender<CeremonyMessage>,
@@ -61,37 +28,33 @@ pub fn run_contributor<PB, PK>(
 ) -> eyre::Result<MonitorProcessJoin>
 where
     PB: AsRef<OsStr> + std::fmt::Debug,
-    PK: AsRef<OsStr>,
 {
-    let key_file = File::open(Path::new(&key_file_path))?;
-    let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
-
-    let span = tracing::error_span!("contributor", address = contributor_key.address.as_str());
+    let span = tracing::error_span!("verifier");
     let _guard = span.enter();
 
-    tracing::info!("Running contributor.");
+    tracing::info!("Running verifier.");
 
-    let exec = subprocess::Exec::cmd(contributor_bin_path)
-        .arg("contribute")
-        .args(&["--passphrase", "test"])
+    let exec = subprocess::Exec::cmd(&verifier_bin_path)
         .arg(format!("{}", setup_phase)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(key_file_path);
+        .arg(VERIFIER_VIEW_KEY) // <VERIFIER_VIEW_KEY>
+        .arg("DEBUG"); // log level
 
-    let log_file_path = log_dir_path.join("contributor.log");
+    let log_file_path = log_dir_path.join("verifier.log");
 
     run_monitor_process(
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(move |stdout, _ceremony_tx| contributor_monitor(stdout, &log_file_path)),
+        fallible_monitor(move |stdout, _ceremony_tx| verifier_monitor(stdout, &log_file_path)),
     )
+    .wrap_err_with(|| format!("Error running verifier {:?}", verifier_bin_path))
 }
 
 /// Monitors the `setup1-contributor`, logs output to `log_file_path`
 /// file and `tracing::debug!()`.
-fn contributor_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::Result<()> {
+fn verifier_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 
     let mut log_file = OpenOptions::new()

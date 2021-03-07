@@ -8,12 +8,19 @@ pub mod coordinator_proxy;
 pub mod npm;
 pub mod process;
 pub mod rust;
+pub mod verifier;
 
 /// Message sent between the various components running during the
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub enum CeremonyMessage {
+    /// Notify the receivers that the specified round has finished
+    /// sucessfully.
+    RoundFinished(u64),
+    /// Notify the receivers that the specified round has successfully
+    /// been aggregated.
+    RoundAggregated(u64),
     /// Notify the receivers that the coordinator rocket server is
     /// ready to start receiving requests.
     CoordinatorReady,
