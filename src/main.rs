@@ -47,11 +47,29 @@ const SETUP_DIR: &str = "aleo-setup";
 /// Path to contributor 1's key file.
 const CONTRIBUTOR1_KEY_PATH: &str = "contributor1_key.json";
 
+/// Path to where the log files are stored.
+const LOG_DIR: &str = "log";
+
+/// Path to where the key files are stored.
+const KEYS_DIR: &str = "keys";
+
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
 /// is run.
 fn main() -> eyre::Result<()> {
     setup_reporting()?;
+
+    // Create the log dir if it doesn't yet exist.
+    let log_dir_path = Path::new(LOG_DIR);
+    if !log_dir_path.exists() {
+        std::fs::create_dir(log_dir_path)?;
+    }
+
+    // Create the keys dir if it doesn't yet exist.
+    let keys_dir_path = Path::new(KEYS_DIR);
+    if !keys_dir_path.exists() {
+        std::fs::create_dir(keys_dir_path)?;
+    }
 
     // Install a specific version of the rust toolchain needed to be
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
@@ -100,8 +118,8 @@ fn main() -> eyre::Result<()> {
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let contributor1_key_file_path = Path::new("contributor1-key.json");
-    generate_contributor_key(&setup1_contributor_bin_path, contributor1_key_file_path)?;
+    let contributor1_key_file_path = keys_dir_path.join("contributor1-key.json");
+    generate_contributor_key(&setup1_contributor_bin_path, &contributor1_key_file_path)?;
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -118,6 +136,7 @@ fn main() -> eyre::Result<()> {
         SETUP_COORDINATOR_DIR,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
+        log_dir_path.to_path_buf(),
     )?;
 
     let coordinator_config = CoordinatorConfig {
@@ -127,8 +146,12 @@ fn main() -> eyre::Result<()> {
     };
 
     // Run the coordinator.
-    let coordinator_join =
-        run_coordinator(coordinator_config, ceremony_tx.clone(), ceremony_rx.clone())?;
+    let coordinator_join = run_coordinator(
+        coordinator_config,
+        ceremony_tx.clone(),
+        ceremony_rx.clone(),
+        log_dir_path.to_path_buf(),
+    )?;
 
     // Wait for the coordinator and coordinator proxy to start.
     coordinator_ready
@@ -139,10 +162,11 @@ fn main() -> eyre::Result<()> {
 
     let contributor_join = run_contributor(
         setup1_contributor_bin_path,
-        contributor1_key_file_path,
+        &contributor1_key_file_path,
         SetupPhase::Development,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
+        log_dir_path.to_path_buf(),
     )?;
     contributor_join
         .join()

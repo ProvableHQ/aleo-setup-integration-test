@@ -13,7 +13,7 @@ use std::{
     ffi::OsStr,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[derive(Deserialize)]
@@ -24,6 +24,8 @@ pub struct ContributorKey {
     pub address: String,
 }
 
+/// Use `setup1-contributor` to generate the contributor key file used
+/// in [run_contributor()].
 pub fn generate_contributor_key<PB, PK>(
     contributor_bin_path: PB,
     key_file_path: PK,
@@ -54,6 +56,7 @@ pub fn run_contributor<PB, PK>(
     setup_phase: SetupPhase,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
+    log_dir_path: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin>
 where
     PB: AsRef<OsStr> + std::fmt::Debug,
@@ -74,30 +77,31 @@ where
         .arg("http://localhost:9000") // <COORDINATOR_API_URL>
         .arg(key_file_path);
 
+    let log_file_path = log_dir_path.join("coordinator_log.txt");
+
     run_monitor_process(
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(contributor_monitor),
+        fallible_monitor(move |stdout, ceremony_tx| {
+            contributor_monitor(stdout, ceremony_tx, &log_file_path)
+        }),
     )
 }
 
-fn contributor_monitor(stdout: File, _ceremony_tx: Sender<CeremonyMessage>) -> eyre::Result<()> {
+fn contributor_monitor(
+    stdout: File,
+    _ceremony_tx: Sender<CeremonyMessage>,
+    log_file_path: impl AsRef<Path>,
+) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 
-    let log_path = Path::new("contributor_log.txt");
-    let current_dir = std::env::current_dir()?;
     let mut log_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open(log_path)
-        .wrap_err_with(|| {
-            format!(
-                "Unable to open log file {:?} in {:?}",
-                log_path, current_dir
-            )
-        })?;
+        .open(log_file_path)
+        .wrap_err("unable to open log file")?;
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.

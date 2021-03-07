@@ -36,6 +36,7 @@ pub fn run_coordinator(
     config: CoordinatorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
+    log_dir_path: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
@@ -46,12 +47,15 @@ pub fn run_coordinator(
         .cwd(config.crate_dir)
         .arg(config.phase.to_string());
 
+    let log_file_path = log_dir_path.join("coordinator_log.txt");
     run_monitor_process(
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(monitor_coordinator),
+        fallible_monitor(move |stdout, ceremony_tx| {
+            monitor_coordinator(stdout, ceremony_tx, &log_file_path)
+        }),
     )
 }
 
@@ -60,23 +64,20 @@ pub fn run_coordinator(
 /// [CeremonyMessage::CoordinatorReady] message. Pipes the
 /// `stderr`/`stdout` to the [tracing::debug!()], and
 /// `coordinator_log.txt` log file.
-fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> eyre::Result<()> {
+fn monitor_coordinator(
+    stdout: File,
+    ceremony_tx: Sender<CeremonyMessage>,
+    log_file_path: impl AsRef<Path>,
+) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 
     let start_re = Regex::new("Rocket has launched.*")?;
 
-    let log_path = Path::new("coordinator_log.txt");
-    let current_dir = std::env::current_dir()?;
     let mut log_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open(log_path)
-        .wrap_err_with(|| {
-            format!(
-                "Unable to open log file {:?} in {:?}",
-                log_path, current_dir
-            )
-        })?;
+        .open(log_file_path)
+        .wrap_err("unable to open log file")?;
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.

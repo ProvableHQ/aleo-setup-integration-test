@@ -14,7 +14,7 @@ use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 /// Starts the nodejs proxy for the setup coordinator server.
@@ -22,14 +22,12 @@ use std::{
 /// Currently this doesn't cleanly shut down, there doesn't appear to
 /// be an easy way to share the process between the line reader, and
 /// the coordinator message listener.
-pub fn run_coordinator_proxy<P>(
-    setup_coordinator_repo: P,
+pub fn run_coordinator_proxy(
+    setup_coordinator_repo: impl AsRef<Path> + Debug,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-) -> eyre::Result<MonitorProcessJoin>
-where
-    P: AsRef<Path> + Debug,
-{
+    log_dir_path: PathBuf,
+) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator_proxy");
     let _guard = span.enter();
 
@@ -39,12 +37,16 @@ where
         .cwd(setup_coordinator_repo)
         .arg("server.js");
 
+    let log_file_path = log_dir_path.join("coordinator_proxy_log.txt");
+
     run_monitor_process(
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(setup_coordinator_proxy_monitor),
+        fallible_monitor(move |stdout, ceremony_tx| {
+            setup_coordinator_proxy_monitor(stdout, ceremony_tx, &log_file_path)
+        }),
     )
 }
 
@@ -56,23 +58,17 @@ where
 fn setup_coordinator_proxy_monitor(
     stdout: File,
     ceremony_tx: Sender<CeremonyMessage>,
+    log_file_path: impl AsRef<Path>,
 ) -> eyre::Result<()> {
     let buf_pipe = BufReader::new(stdout);
 
     let start_re = Regex::new("Websocket listening on.*")?;
 
-    let log_path = Path::new("coordinator_proxy_log.txt");
-    let current_dir = std::env::current_dir()?;
     let mut log_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open(log_path)
-        .wrap_err_with(|| {
-            format!(
-                "Unable to open log file {:?} in {:?}",
-                log_path, current_dir
-            )
-        })?;
+        .open(log_file_path)
+        .wrap_err("unable to open log file")?;
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.

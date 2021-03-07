@@ -9,6 +9,7 @@ aleo-setup-coordinator/
 transcript/
 
 # Log files
-coordinator_log.txt
-coordinator_proxy_log.txt
-contributor_log.txt
+log/
+
+# Key files
+keys/
