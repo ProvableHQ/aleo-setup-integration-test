@@ -2,13 +2,14 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use aleo_setup_integration_test::{
-    contributor::generate_contributor_key,
+    contributor::{generate_contributor_key, run_contributor},
     coordinator::{run_coordinator, CoordinatorConfig},
     coordinator_proxy::run_coordinator_proxy,
     npm::npm_install,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
-    CeremonyMessage, SetupPhase,
+    CeremonyMessage, MessageWaiter, SetupPhase,
 };
+use eyre::Context;
 use mpmc_bus::Bus;
 use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
@@ -43,8 +44,8 @@ const SETUP_COORDINATOR_DIR: &str = "aleo-setup-coordinator";
 /// The directory that the `aleo-setup` repository is cloned to.
 const SETUP_DIR: &str = "aleo-setup";
 
-/// Path to the setup1-contributor key file.
-const CONTRIBUTOR_KEY_PATH: &str = "contributor_key.json";
+/// Path to contributor 1's key file.
+const CONTRIBUTOR1_KEY_PATH: &str = "contributor1_key.json";
 
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
@@ -53,8 +54,8 @@ fn main() -> eyre::Result<()> {
     setup_reporting()?;
 
     // Install a specific version of the rust toolchain needed to be
-    // able to compile `aleo-setup`.
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
+    // able to compile `aleo-setup`.
     // install_rust_toolchain(&rust_1_47_nightly)?;
 
     // Clone the git repos for `aleo-setup` and
@@ -75,27 +76,42 @@ fn main() -> eyre::Result<()> {
     // get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
 
     // Build the setup coordinator Rust project.
-    let coordinator_output_dir = build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
-    let coordinator_bin_path = coordinator_output_dir.join("aleo-setup-coordinator");
+    build_rust_crate(SETUP_COORDINATOR_DIR, &rust_1_47_nightly)?;
+    let coordinator_bin_path = Path::new(SETUP_COORDINATOR_DIR)
+        .join("target/release")
+        .join("aleo-setup-coordinator");
 
     // Install the dependencies for the setup coordinator nodejs proxy.
     // npm_install(SETUP_COORDINATOR_DIR)?;
 
     // Build the setup1-contributor Rust project.
-    let setup1_contributor_output_dir = build_rust_crate(
+    build_rust_crate(
         Path::new(SETUP_DIR).join("setup1-contributor"),
         &rust_1_47_nightly,
     )?;
-    let setup1_contributor_bin_path = setup1_contributor_output_dir.join("setup1-contributor");
 
-    // Generate the key file used for `setup1-contributor`.
-    generate_contributor_key(setup1_contributor_bin_path, CONTRIBUTOR_KEY_PATH)?;
+    let setup_output_dir = Path::new(SETUP_DIR).join("target/release");
+
+    let setup1_contributor_bin_path = setup_output_dir.join("aleo-setup-contributor");
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
     let bus: Bus<CeremonyMessage> = Bus::new(1000);
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
+
+    let contributor1_key_file_path = Path::new("contributor1-key.json");
+    generate_contributor_key(&setup1_contributor_bin_path, contributor1_key_file_path)?;
+
+    // Watches the bus to determine when the coordinator and coordinator proxy are ready.
+    let coordinator_ready = MessageWaiter::spawn(
+        vec![
+            CeremonyMessage::CoordinatorReady,
+            CeremonyMessage::CoordinatorProxyReady,
+        ],
+        CeremonyMessage::Shutdown,
+        ceremony_rx.clone(),
+    );
 
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_join = run_coordinator_proxy(
@@ -110,16 +126,29 @@ fn main() -> eyre::Result<()> {
         phase: SetupPhase::Development,
     };
 
-    // Run the coordinator (which will first wait for the proxy to start).
+    // Run the coordinator.
     let coordinator_join =
         run_coordinator(coordinator_config, ceremony_tx.clone(), ceremony_rx.clone())?;
 
+    // Wait for the coordinator and coordinator proxy to start.
+    coordinator_ready
+        .join()
+        .wrap_err("Error while waiting for coordinator to start")?;
+
     tracing::info!("Coordinator started.");
 
-    // TODO: start the `setup1-verifier` and `setup1-contributor`.
+    let contributor_join = run_contributor(
+        setup1_contributor_bin_path,
+        contributor1_key_file_path,
+        SetupPhase::Development,
+        ceremony_tx.clone(),
+        ceremony_rx.clone(),
+    )?;
+    contributor_join
+        .join()
+        .expect("error while joining contributor");
 
-    // wait_for_message(ceremony_rx.clone(), CeremonyMessage::CoordinatorReady);
-    // wait_for_message(ceremony_rx.clone(), CeremonyMessage::CoordinatorProxyReady);
+    // TODO: start the `setup1-verifier`.
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.

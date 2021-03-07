@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Debug, path::Path};
 
 use subprocess::Exec;
 
@@ -62,7 +59,7 @@ pub fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
 /// The returned path is the output directory, containing the build
 /// artifacts.
 #[tracing::instrument(level = "error")]
-pub fn build_rust_crate<P>(crate_dir: P, toolchain: &RustToolchain) -> eyre::Result<PathBuf>
+pub fn build_rust_crate<P>(crate_dir: P, toolchain: &RustToolchain) -> eyre::Result<()>
 where
     P: AsRef<Path> + Debug,
 {
@@ -81,5 +78,5 @@ where
         .map_err(eyre::Error::from)
         .and_then(default_parse_exit_status)?;
 
-    Ok(crate_dir.as_ref().join("target/release"))
+    Ok(())
 }

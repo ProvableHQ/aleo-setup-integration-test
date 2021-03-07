@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
 };
 
@@ -35,7 +35,7 @@ pub struct CoordinatorConfig {
 pub fn run_coordinator(
     config: CoordinatorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
-    mut ceremony_rx: Receiver<CeremonyMessage>,
+    ceremony_rx: Receiver<CeremonyMessage>,
 ) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
@@ -67,7 +67,7 @@ fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> ey
 
     let log_path = Path::new("coordinator_log.txt");
     let current_dir = std::env::current_dir()?;
-    let log_file = OpenOptions::new()
+    let mut log_file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(log_path)
@@ -77,8 +77,6 @@ fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> ey
                 log_path, current_dir
             )
         })?;
-
-    let mut buf_log = BufWriter::new(log_file);
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.
@@ -93,8 +91,8 @@ fn monitor_coordinator(stdout: File, ceremony_tx: Sender<CeremonyMessage>) -> ey
                 tracing::debug!("{}", line);
 
                 // Write to log file.
-                buf_log.write(line.as_ref())?;
-                buf_log.write("\n".as_ref())?;
+                log_file.write(line.as_ref())?;
+                log_file.write("\n".as_ref())?;
             }
             Err(error) => {
                 tracing::error!("Error reading line from pipe to nodejs process: {}", error)

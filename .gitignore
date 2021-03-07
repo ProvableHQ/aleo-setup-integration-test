@@ -12,6 +12,3 @@ transcript/
 coordinator_log.txt
 coordinator_proxy_log.txt
 contributor_log.txt
-
-# Key files
-contributor_key.json

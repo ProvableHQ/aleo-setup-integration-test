@@ -13,7 +13,7 @@ use subprocess::Exec;
 use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader, Write},
     path::Path,
 };
 
@@ -63,7 +63,7 @@ fn setup_coordinator_proxy_monitor(
 
     let log_path = Path::new("coordinator_proxy_log.txt");
     let current_dir = std::env::current_dir()?;
-    let log_file = OpenOptions::new()
+    let mut log_file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(log_path)
@@ -73,8 +73,6 @@ fn setup_coordinator_proxy_monitor(
                 log_path, current_dir
             )
         })?;
-
-    let mut buf_log = BufWriter::new(log_file);
 
     // It's expected that if the process closes, the stdout will also
     // close and this iterator will complete gracefully.
@@ -89,8 +87,8 @@ fn setup_coordinator_proxy_monitor(
                 tracing::debug!("{}", line);
 
                 // Write to log file.
-                buf_log.write(line.as_ref())?;
-                buf_log.write("\n".as_ref())?;
+                log_file.write(line.as_ref())?;
+                log_file.write("\n".as_ref())?;
             }
             Err(error) => tracing::error!(
                 "Error reading line from pipe to coordinator process: {}",

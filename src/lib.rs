@@ -1,7 +1,6 @@
-use std::{any::Any, fmt::Display, marker::PhantomData};
+use std::{fmt::Display, marker::PhantomData};
 
-use mpmc_bus::{Receiver, RecvError};
-use thiserror::Error;
+use mpmc_bus::Receiver;
 
 pub mod contributor;
 pub mod coordinator;
@@ -49,34 +48,9 @@ impl Display for SetupPhase {
     }
 }
 
-#[derive(Debug)]
-pub enum MessageWaiterError {
-    Recv(RecvError),
-    Panic(Box<(dyn Any + Send + 'static)>),
-}
-
-impl std::fmt::Display for MessageWaiterError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MessageWaiterError::Recv(recv_error) => {
-                write!(f, "Error while receiving message from bus: {}", recv_error)
-            }
-            MessageWaiterError::Panic(_) => write!(f, "Panic in MessageWaiter thread"),
-        }
-    }
-}
-
-impl std::error::Error for MessageWaiterError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            MessageWaiterError::Recv(error) => Some(error),
-            MessageWaiterError::Panic(_) => None,
-        }
-    }
-}
-
+/// See [MessageWaiter::spawn()].
 pub struct MessageWaiter<T> {
-    join_handle: std::thread::JoinHandle<Result<(), RecvError>>,
+    join_handle: std::thread::JoinHandle<eyre::Result<()>>,
     message_type: PhantomData<T>,
 }
 
@@ -84,8 +58,14 @@ impl<T> MessageWaiter<T>
 where
     T: PartialEq + Clone + Sync + Send + 'static,
 {
-    pub fn new(messages: Vec<T>, rx: Receiver<T>, shutdown_message: T) -> Self {
-        let join_handle = std::thread::spawn(move || Self::listen(messages, rx, shutdown_message));
+    /// Spawns a thread that listens to `rx` until all messages in
+    /// `expected_messages` have been received once, or if the
+    /// specified `shutdown_message` is received. Call
+    /// [MessageWaiter::join()] to block until all expected messages
+    /// have been received.
+    pub fn spawn(expected_messages: Vec<T>, shutdown_message: T, rx: Receiver<T>) -> Self {
+        let join_handle =
+            std::thread::spawn(move || Self::listen(expected_messages, shutdown_message, rx));
 
         Self {
             join_handle,
@@ -93,33 +73,36 @@ where
         }
     }
 
+    /// Listen to messages from `rx`, and remove equivalent message
+    /// from `expected_messages` until `expected_messages` is empty.
     fn listen(
-        mut messages: Vec<T>,
-        mut rx: Receiver<T>,
+        mut expected_messages: Vec<T>,
         shutdown_message: T,
-    ) -> Result<(), RecvError> {
-        while !messages.is_empty() {
+        mut rx: Receiver<T>,
+    ) -> eyre::Result<()> {
+        while !expected_messages.is_empty() {
             let received_message = rx.recv()?;
 
             if received_message == shutdown_message {
                 break;
             }
 
-            if let Some(position) = messages
+            if let Some(position) = expected_messages
                 .iter()
                 .position(|message| message == &received_message)
             {
-                messages.swap_remove(position);
+                expected_messages.swap_remove(position);
             }
         }
 
         Ok(())
     }
 
-    pub fn join(mut self) -> Result<(), MessageWaiterError> {
+    /// Wait for all the expected messages to be received.
+    pub fn join(self) -> eyre::Result<()> {
         match self.join_handle.join() {
-            Err(panic_error) => Err(MessageWaiterError::Panic(panic_error)),
-            Ok(Err(recv_error)) => Err(MessageWaiterError::Recv(recv_error)),
+            Err(panic_error) => panic!(panic_error),
+            Ok(Err(run_error)) => Err(run_error),
             Ok(Ok(_)) => Ok(()),
         }
     }
