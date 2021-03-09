@@ -8,9 +8,5 @@ aleo-setup-coordinator/
 # Cooridinator ceremony transcript
 transcript/
 
-# Log files
-logs/
-aleo-setup.log
-
-# Key files
-keys/
+# Ceremony output
+out/

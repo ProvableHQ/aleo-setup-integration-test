@@ -1,3 +1,6 @@
+//! Module containing functions for controlling/running a
+//! `setup1-verifier` ceremony verifier.
+
 use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
@@ -9,7 +12,6 @@ use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 
 use std::{
-    ffi::OsStr,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
@@ -18,29 +20,27 @@ use std::{
 const VERIFIER_VIEW_KEY: &str = "AViewKey1qSVA1womAfkkGHzBxeptAz781b9stjaTj9fFnEU2TC47";
 
 /// Run the `setup1-verifier`.
-pub fn run_verifier<PB>(
-    verifier_bin_path: PB,
+pub fn run_verifier(
+    verifier_bin_path: PathBuf,
     setup_phase: SetupPhase,
     coordinator_api_url: String,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    log_dir_path: PathBuf,
-) -> eyre::Result<MonitorProcessJoin>
-where
-    PB: AsRef<OsStr> + std::fmt::Debug,
-{
+    out_dir_path: PathBuf,
+) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("verifier");
     let _guard = span.enter();
 
     tracing::info!("Running verifier.");
 
-    let exec = subprocess::Exec::cmd(&verifier_bin_path)
+    let exec = subprocess::Exec::cmd(verifier_bin_path.canonicalize()?)
+        .cwd(&out_dir_path)
         .arg(format!("{}", setup_phase)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
         .arg(VERIFIER_VIEW_KEY) // <VERIFIER_VIEW_KEY>
         .arg("DEBUG"); // log level
 
-    let log_file_path = log_dir_path.join("verifier.log");
+    let log_file_path = out_dir_path.join("verifier.log");
 
     run_monitor_process(
         exec,

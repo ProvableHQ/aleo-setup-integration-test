@@ -1,3 +1,6 @@
+//! Functions for controlling/running a `setup1-contributor` ceremony
+//! contributor.
+
 use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
@@ -50,19 +53,15 @@ where
 }
 
 /// Run the `setup1-contributor`.
-pub fn run_contributor<PB, PK>(
-    contributor_bin_path: PB,
-    key_file_path: PK,
+pub fn run_contributor(
+    contributor_bin_path: PathBuf,
+    key_file_path: PathBuf,
     setup_phase: SetupPhase,
     coordinator_api_url: String,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    log_dir_path: PathBuf,
-) -> eyre::Result<MonitorProcessJoin>
-where
-    PB: AsRef<OsStr> + std::fmt::Debug,
-    PK: AsRef<OsStr>,
-{
+    out_dir_path: PathBuf,
+) -> eyre::Result<MonitorProcessJoin> {
     let key_file = File::open(Path::new(&key_file_path))?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
 
@@ -71,14 +70,15 @@ where
 
     tracing::info!("Running contributor.");
 
-    let exec = subprocess::Exec::cmd(contributor_bin_path)
+    let exec = subprocess::Exec::cmd(contributor_bin_path.canonicalize()?)
+        .cwd(&out_dir_path)
         .arg("contribute")
         .args(&["--passphrase", "test"])
         .arg(format!("{}", setup_phase)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(key_file_path);
+        .arg(key_file_path.canonicalize()?);
 
-    let log_file_path = log_dir_path.join("contributor.log");
+    let log_file_path = out_dir_path.join("contributor.log");
 
     run_monitor_process(
         exec,

@@ -1,3 +1,6 @@
+//! Functions for controlling/running the coordinator nodejs proxy
+//! server.
+
 use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
@@ -26,7 +29,7 @@ pub fn run_coordinator_proxy(
     setup_coordinator_repo: impl AsRef<Path> + Debug,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    log_dir_path: PathBuf,
+    out_dir_path: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator_proxy");
     let _guard = span.enter();
@@ -37,7 +40,7 @@ pub fn run_coordinator_proxy(
         .cwd(setup_coordinator_repo)
         .arg("server.js");
 
-    let log_file_path = log_dir_path.join("coordinator_proxy.log");
+    let log_file_path = out_dir_path.join("coordinator_proxy.log");
 
     run_monitor_process(
         exec,

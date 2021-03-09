@@ -5,8 +5,10 @@ use mpmc_bus::Receiver;
 pub mod contributor;
 pub mod coordinator;
 pub mod coordinator_proxy;
+pub mod git;
 pub mod npm;
 pub mod process;
+pub mod reporting;
 pub mod rust;
 pub mod verifier;
 

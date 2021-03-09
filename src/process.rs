@@ -1,3 +1,5 @@
+//! Functions for starting/managing/interacting with external processes.
+
 use std::{fs::File, thread::JoinHandle, time::Duration};
 
 use eyre::Context;

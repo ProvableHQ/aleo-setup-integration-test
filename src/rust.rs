@@ -1,3 +1,6 @@
+//! Functions for interacting with Rust projects, and managing the
+//! Rust toolchain.
+
 use std::{fmt::Debug, path::Path};
 
 use subprocess::Exec;

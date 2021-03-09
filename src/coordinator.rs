@@ -1,3 +1,6 @@
+//! Functions for controlling/running the aleo setup coordinator
+//! rocket server.
+
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
@@ -16,6 +19,18 @@ use crate::{
     CeremonyMessage, SetupPhase,
 };
 
+/// Copy the `Rocket.toml` config file from the
+/// `aleo-setup-cooridinator` repository to the out dir, which is the
+/// current working directory while running the coordinator.
+pub fn deploy_coordinator_rocket_config(config: &CoordinatorConfig) -> eyre::Result<()> {
+    let config_path = config.crate_dir.join("Rocket.toml");
+    let config_deploy_path = config.out_dir_path.join("Rocket.toml");
+
+    std::fs::copy(config_path, config_deploy_path)
+        .wrap_err("Error while deploying coordinator Rocket.toml config file")
+        .map(|_| ())
+}
+
 /// Configuration for the [run_coordinator()] function to run
 /// `aleo-setup-coordinator` rocket server.
 #[derive(Debug)]
@@ -27,27 +42,28 @@ pub struct CoordinatorConfig {
     pub setup_coordinator_bin: PathBuf,
     /// What phase of the setup ceremony to run.
     pub phase: SetupPhase,
+    /// The directory where all the artifacts produced while running
+    /// the coordinator will be stored (and the current working
+    /// directory for the process).
+    pub out_dir_path: PathBuf,
 }
 
-/// Run the `aleo-setup-coordinator`. This will first wait for the
-/// nodejs proxy to start (which will publish a
-/// [CoordinatorMessage::CoordinatorProxyReady]).
+/// Run the `aleo-setup-coordinator` rocket server.
 pub fn run_coordinator(
-    config: CoordinatorConfig,
+    config: &CoordinatorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    log_dir_path: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
 
     tracing::info!("Starting setup coordinator.");
 
-    let exec = Exec::cmd(std::fs::canonicalize(config.setup_coordinator_bin)?)
-        .cwd(config.crate_dir)
+    let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
+        .cwd(&config.out_dir_path)
         .arg(config.phase.to_string());
 
-    let log_file_path = log_dir_path.join("coordinator.log");
+    let log_file_path = config.out_dir_path.join("coordinator.log");
     run_monitor_process(
         exec,
         default_parse_exit_status,

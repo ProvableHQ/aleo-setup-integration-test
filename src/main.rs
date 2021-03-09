@@ -3,44 +3,33 @@
 
 use aleo_setup_integration_test::{
     contributor::{generate_contributor_key, run_contributor},
-    coordinator::{run_coordinator, CoordinatorConfig},
+    coordinator::{deploy_coordinator_rocket_config, run_coordinator, CoordinatorConfig},
     coordinator_proxy::run_coordinator_proxy,
+    git::clone_git_repository,
     npm::npm_install,
+    reporting::setup_reporting,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     verifier::run_verifier,
     CeremonyMessage, MessageWaiter, SetupPhase,
 };
 use eyre::Context;
 use mpmc_bus::Bus;
-use tracing_subscriber::{
-    prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, EnvFilter,
-};
+use structopt::StructOpt;
 
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-/// Set up [tracing] and [color-eyre](color_eyre).
-fn setup_reporting() -> eyre::Result<()> {
-    color_eyre::install()?;
-
-    let filter_layer = EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info"))?;
-    let fmt_layer = tracing_subscriber::fmt::layer();
-    let error_layer = tracing_error::ErrorLayer::default();
-
-    tracing_subscriber::registry()
-        .with(filter_layer)
-        .with(fmt_layer)
-        .with(error_layer)
-        .init();
-
-    Ok(())
-}
+/// The url for the `aleo-setup-coordinator` git repository.
+const COORDINATOR_REPO_URL: &str = "https://github.com/AleoHQ/aleo-setup-coordinator";
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
 const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+
+/// The url for the `aleo-setup` git repository.
+const SETUP_REPO_URL: &str = "https://github.com/AleoHQ/aleo-setup";
 
 /// The directory that the `aleo-setup` repository is cloned to.
 const SETUP_DIR: &str = "aleo-setup";
@@ -49,14 +38,56 @@ const SETUP_DIR: &str = "aleo-setup";
 /// coordinator.
 const COORDINATOR_API_URL: &str = "http://localhost:9000";
 
-/// Path to contributor 1's key file.
-const CONTRIBUTOR1_KEY_PATH: &str = "contributor1_key.json";
+/// Path to where the log files, key files and transcripts are stored.
+const OUT_DIR: &str = "out";
 
-/// Path to where the log files are stored.
-const LOG_DIR: &str = "logs";
+/// Create a directory if it doesn't yet exist, and return it as a
+/// [PathBuf].
+fn create_dir_if_not_exists<P>(path: P) -> eyre::Result<PathBuf>
+where
+    P: AsRef<Path> + Into<PathBuf> + std::fmt::Debug,
+{
+    if !path.as_ref().exists() {
+        std::fs::create_dir(&path)
+            .wrap_err_with(|| format!("Error while creating path {:?}.", path))?;
+    }
+    Ok(path.into())
+}
 
-/// Path to where the key files are stored.
-const KEYS_DIR: &str = "keys";
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "Aleo Setup Integration Test",
+    about = "An integration test for the aleo-setup and aleo-setup-coordinator repositories."
+)]
+struct Options {
+    /// Remove any artifacts created during a previous integration
+    /// test run before starting.
+    #[structopt(long, short = "c")]
+    clean: bool,
+
+    /// Keep the git repositories. The following effects take place
+    /// when this is enabled:
+    ///
+    /// + Don't delete git repositories if [Options::clean] is
+    ///   enabled.
+    #[structopt(long, short = "k")]
+    keep_repos: bool,
+
+    /// Don't attempt to install install prerequisites. Makes the test
+    /// faster for development purposes.
+    #[structopt(long, short = "n")]
+    no_prereqs: bool,
+}
+
+/// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
+fn clone_git_repos() -> eyre::Result<()> {
+    clone_git_repository(COORDINATOR_REPO_URL, COORDINATOR_DIR, "main")
+        .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
+    clone_git_repository(SETUP_REPO_URL, SETUP_DIR, "contributor-password-stdin")
+        .wrap_err("Error while cloning the `aleo-setup` git repository.")?;
+
+    Ok(())
+}
 
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
@@ -64,41 +95,49 @@ const KEYS_DIR: &str = "keys";
 fn main() -> eyre::Result<()> {
     setup_reporting()?;
 
+    let options: Options = Options::from_args();
+
+    let out_dir_path = Path::new(OUT_DIR);
+
+    // Perfom the clean action if required.
+    if options.clean {
+        tracing::info!("Cleaning integration test.");
+        
+        if out_dir_path.exists() {
+            tracing::info!("Removing out dir: {:?}", out_dir_path);
+            std::fs::remove_dir_all(out_dir_path)?;
+        }
+
+        if !options.keep_repos {
+            let setup_dir_path = Path::new(SETUP_DIR);
+            if setup_dir_path.exists() {
+                tracing::info!("Removing `aleo-setup` repository: {:?}.", setup_dir_path);
+                std::fs::remove_dir_all(setup_dir_path)?;
+            }
+
+            let coordinator_dir_path = Path::new(COORDINATOR_DIR);
+            if coordinator_dir_path.exists() {
+                tracing::info!(
+                    "Removing `aleo-setup-coordinator` repository: {:?}.",
+                    coordinator_dir_path
+                );
+                std::fs::remove_dir_all(coordinator_dir_path)?;
+            }
+        }
+    }
+
     let setup_phase = SetupPhase::Development;
-
-    // Create the log dir if it doesn't yet exist.
-    let log_dir_path = Path::new(LOG_DIR);
-    if !log_dir_path.exists() {
-        std::fs::create_dir(log_dir_path)?;
-    }
-
-    // Create the keys dir if it doesn't yet exist.
-    let keys_dir_path = Path::new(KEYS_DIR);
-    if !keys_dir_path.exists() {
-        std::fs::create_dir(keys_dir_path)?;
-    }
-
-    // Install a specific version of the rust toolchain needed to be
+    let out_dir_path = create_dir_if_not_exists(out_dir_path)?;
+    let keys_dir_path = create_dir_if_not_exists(out_dir_path.join("keys"))?;
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
-    // able to compile `aleo-setup`.
-    // install_rust_toolchain(&rust_1_47_nightly)?;
 
-    // Clone the git repos for `aleo-setup` and
-    // `aleo-setup-coordinator`.
-    //
-    // **NOTE: currently I am commenting out these lines during
-    // development of this test**
-    //
-    // TODO: implement a command line argument that will ignore this
-    // step if the repos are already cloned, for development purposes.
-    // In the actual test it's probably good for this to fail if it's
-    // trying to overwrite a previous test, it should be starting
-    // clean.
-    // get_git_repository(
-    //     "https://github.com/AleoHQ/aleo-setup-coordinator",
-    //     SETUP_COORDINATOR_DIR,
-    // )?;
-    // get_git_repository("https://github.com/AleoHQ/aleo-setup", SETUP_DIR)?;
+    if !options.no_prereqs {
+        // Install a specific version of the rust toolchain needed to be
+        // able to compile `aleo-setup`.
+        install_rust_toolchain(&rust_1_47_nightly)?;
+    }
+
+    clone_git_repos()?;
 
     // Build the setup coordinator Rust project.
     build_rust_crate(COORDINATOR_DIR, &rust_1_47_nightly)?;
@@ -106,8 +145,19 @@ fn main() -> eyre::Result<()> {
         .join("target/release")
         .join("aleo-setup-coordinator");
 
-    // Install the dependencies for the setup coordinator nodejs proxy.
-    // npm_install(SETUP_COORDINATOR_DIR)?;
+    let coordinator_config = CoordinatorConfig {
+        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
+        setup_coordinator_bin: coordinator_bin_path,
+        phase: setup_phase,
+        out_dir_path: create_dir_if_not_exists(out_dir_path.join("coordinator"))?,
+    };
+
+    deploy_coordinator_rocket_config(&coordinator_config)?;
+
+    if !options.no_prereqs {
+        // Install the dependencies for the setup coordinator nodejs proxy.
+        npm_install(COORDINATOR_DIR)?;
+    }
 
     // Build the setup1-contributor Rust project.
     build_rust_crate(
@@ -123,7 +173,7 @@ fn main() -> eyre::Result<()> {
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
-    let setup_output_dir = Path::new(SETUP_DIR).join("target/release");
+    let setup_build_output_dir = Path::new(SETUP_DIR).join("target/release");
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
@@ -131,7 +181,7 @@ fn main() -> eyre::Result<()> {
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let contributor_bin_path = setup_output_dir.join("aleo-setup-contributor");
+    let contributor_bin_path = setup_build_output_dir.join("aleo-setup-contributor");
     let contributor1_key_file_path = keys_dir_path.join("contributor1-key.json");
     generate_contributor_key(&contributor_bin_path, &contributor1_key_file_path)?;
 
@@ -164,25 +214,20 @@ fn main() -> eyre::Result<()> {
     );
 
     // Run the nodejs proxy server for the coordinator.
+    let coordinator_proxy_out_dir =
+        create_dir_if_not_exists(out_dir_path.join("coordinator_proxy"))?;
     let coordinator_proxy_join = run_coordinator_proxy(
         COORDINATOR_DIR,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
-        log_dir_path.to_path_buf(),
+        coordinator_proxy_out_dir,
     )?;
-
-    let coordinator_config = CoordinatorConfig {
-        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
-        setup_coordinator_bin: coordinator_bin_path,
-        phase: setup_phase,
-    };
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
-        coordinator_config,
+        &coordinator_config,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
-        log_dir_path.to_path_buf(),
     )?;
 
     // Wait for the coordinator and coordinator proxy to start.
@@ -192,24 +237,28 @@ fn main() -> eyre::Result<()> {
 
     tracing::info!("Coordinator started.");
 
+    // Run the `setup1-contributor`.
+    let contributor_out_dir = create_dir_if_not_exists(out_dir_path.join("contributor"))?;
     let contributor_join = run_contributor(
         contributor_bin_path,
-        &contributor1_key_file_path,
+        contributor1_key_file_path,
         setup_phase,
         COORDINATOR_API_URL.to_string(),
         ceremony_tx.clone(),
         ceremony_rx.clone(),
-        log_dir_path.to_path_buf(),
+        contributor_out_dir,
     )?;
 
-    let verifier_bin_path = setup_output_dir.join("setup1-verifier");
+    // Run the `setup1-verifier`.
+    let verifier_bin_path = setup_build_output_dir.join("setup1-verifier");
+    let verifier_out_dir = create_dir_if_not_exists(out_dir_path.join("verifier"))?;
     let verifier_join = run_verifier(
         verifier_bin_path,
         setup_phase,
         COORDINATOR_API_URL.to_string(),
         ceremony_tx.clone(),
         ceremony_rx.clone(),
-        log_dir_path.to_path_buf(),
+        verifier_out_dir,
     )?;
 
     tracing::info!("Waiting for round 1 to start.");
@@ -239,27 +288,27 @@ fn main() -> eyre::Result<()> {
     // child processes.
     ceremony_tx
         .broadcast(CeremonyMessage::Shutdown)
-        .expect("unable to send message");
+        .expect("unable to send shutdown message");
 
     // Wait for contributor threads to close after being told to shut down.
     contributor_join
         .join()
-        .expect("error while joining contributor threads");
+        .expect("Error while joining contributor threads.");
 
     // Wait for verifier threads to close after being told to shut down.
     verifier_join
         .join()
-        .expect("error while joining verifier threads");
+        .expect("Error while joining verifier threads.");
 
     // Wait for the coordinator threads to close after being told to shut down.
     coordinator_join
         .join()
-        .expect("error while joining coordinator threads");
+        .expect("Error while joining coordinator threads.");
 
     // Wait for the coordinator proxy threads to close after being told to shut down.
     coordinator_proxy_join
         .join()
-        .expect("error while joining coordinator proxy threads");
+        .expect("Error while joining coordinator proxy threads.");
 
     Ok(())
 }
