@@ -7,9 +7,11 @@ pub mod coordinator;
 pub mod coordinator_proxy;
 pub mod git;
 pub mod npm;
+pub mod options;
 pub mod process;
 pub mod reporting;
 pub mod rust;
+pub mod test;
 pub mod verifier;
 
 /// Message sent between the various components running during the

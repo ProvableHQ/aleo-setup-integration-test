@@ -24,7 +24,7 @@ use crate::{
 /// current working directory while running the coordinator.
 pub fn deploy_coordinator_rocket_config(config: &CoordinatorConfig) -> eyre::Result<()> {
     let config_path = config.crate_dir.join("Rocket.toml");
-    let config_deploy_path = config.out_dir_path.join("Rocket.toml");
+    let config_deploy_path = config.out_dir.join("Rocket.toml");
 
     std::fs::copy(config_path, config_deploy_path)
         .wrap_err("Error while deploying coordinator Rocket.toml config file")
@@ -45,7 +45,7 @@ pub struct CoordinatorConfig {
     /// The directory where all the artifacts produced while running
     /// the coordinator will be stored (and the current working
     /// directory for the process).
-    pub out_dir_path: PathBuf,
+    pub out_dir: PathBuf,
 }
 
 /// Run the `aleo-setup-coordinator` rocket server.
@@ -60,10 +60,10 @@ pub fn run_coordinator(
     tracing::info!("Starting setup coordinator.");
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
-        .cwd(&config.out_dir_path)
+        .cwd(&config.out_dir)
         .arg(config.phase.to_string());
 
-    let log_file_path = config.out_dir_path.join("coordinator.log");
+    let log_file_path = config.out_dir.join("coordinator.log");
     run_monitor_process(
         exec,
         default_parse_exit_status,
