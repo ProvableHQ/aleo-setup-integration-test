@@ -38,6 +38,16 @@ impl MonitorProcessJoin {
     }
 }
 
+/// Join multiple [MonitorProcessJoin]s.
+pub fn join_multiple<I: IntoIterator<Item = MonitorProcessJoin>>(
+    joins: I,
+) -> std::thread::Result<()> {
+    for join in joins.into_iter() {
+        join.join()?;
+    }
+    Ok(())
+}
+
 /// Starts the process specified in `exec`, with `stdout` set to
 /// [Redirection::Pipe], which is fed into the specified `monitor`
 /// function which runs in a new thread. Another thread is also
@@ -135,7 +145,7 @@ where
     })
 }
 
-/// Create a monitor function to be used with [monitor_process()] that
+/// Create a monitor function to be used with [run_monitor_process()] that
 /// may return an [eyre::Result], if the result is an `Err` then a
 /// panic will occur and the ceremony will shut down with a
 /// [CeremonyMessage::Shutdown].

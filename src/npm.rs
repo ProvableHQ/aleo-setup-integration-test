@@ -1,3 +1,5 @@
+//! Functions for interacting with `npm` the nodejs package manager.
+
 use crate::process::default_parse_exit_status;
 
 use subprocess::Exec;

@@ -1,13 +1,17 @@
+//! Options for running the integration test.
+
 use std::path::PathBuf;
 
+use serde::Serialize;
 use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
+/// Command line options for running the Aleo Setup integration test.
+#[derive(Debug, StructOpt, Serialize)]
 #[structopt(
     name = "Aleo Setup Integration Test",
     about = "An integration test for the aleo-setup and aleo-setup-coordinator repositories."
 )]
-pub struct Options {
+pub struct CmdOptions {
     /// Remove any artifacts created during a previous integration
     /// test run before starting.
     #[structopt(long, short = "c")]
@@ -26,11 +30,11 @@ pub struct Options {
     #[structopt(long, short = "n")]
     pub no_prereqs: bool,
 
-    /// Number of contributors for the test.
+    /// Number of contributor participants for the test.
     #[structopt(long, default_value = "1")]
     pub contributors: u8,
 
-    /// Number of contributors for the test.
+    /// Number of verifier participants for the test.
     #[structopt(long, default_value = "1")]
     pub verifiers: u8,
 

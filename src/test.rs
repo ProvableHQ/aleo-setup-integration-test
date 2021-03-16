@@ -7,7 +7,8 @@ use crate::{
     coordinator_proxy::run_coordinator_proxy,
     git::clone_git_repository,
     npm::npm_install,
-    options::Options,
+    options::CmdOptions,
+    process::{join_multiple, MonitorProcessJoin},
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     verifier::run_verifier,
     CeremonyMessage, MessageWaiter, SetupPhase,
@@ -59,10 +60,17 @@ pub fn clone_git_repos() -> eyre::Result<()> {
     Ok(())
 }
 
+struct Contributor {
+    id: String,
+    key_file: PathBuf,
+}
+
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
 /// is run.
-pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
+pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
+    tracing::info!("Running integration test with options:\n{:#?}", &options);
+
     // Perfom the clean action if required.
     if options.clean {
         tracing::info!("Cleaning integration test.");
@@ -90,8 +98,11 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
         }
     }
 
-    let setup_phase = SetupPhase::Development;
     create_dir_if_not_exists(&options.out_dir)?;
+    let test_config_path = options.out_dir.join("test_config.json");
+    std::fs::write(test_config_path, serde_json::to_string_pretty(&options)?)?;
+
+    let setup_phase = SetupPhase::Development;
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
 
@@ -146,8 +157,20 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
     let ceremony_rx = bus.subscribe();
 
     let contributor_bin_path = setup_build_output_dir.join("aleo-setup-contributor");
-    let contributor1_key_file_path = keys_dir_path.join("contributor1-key.json");
-    generate_contributor_key(&contributor_bin_path, &contributor1_key_file_path)?;
+
+    let contributors: Vec<Contributor> = (1..=options.contributors)
+        .into_iter()
+        .map(|i| {
+            let id = format!("contributor{}", i);
+            let contributor_key_file_name = format!("{}-key.json", id);
+            let key_file = keys_dir_path.join(contributor_key_file_name);
+
+            generate_contributor_key(&contributor_bin_path, &key_file)
+                .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
+
+            Ok(Contributor { id, key_file })
+        })
+        .collect::<eyre::Result<Vec<Contributor>>>()?;
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -177,6 +200,8 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
         ceremony_rx.clone(),
     );
 
+    let mut joins: Vec<MonitorProcessJoin> = Vec::new();
+
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_out_dir =
         create_dir_if_not_exists(options.out_dir.join("coordinator_proxy"))?;
@@ -186,6 +211,7 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
         ceremony_rx.clone(),
         coordinator_proxy_out_dir,
     )?;
+    joins.push(coordinator_proxy_join);
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
@@ -193,6 +219,7 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
         ceremony_tx.clone(),
         ceremony_rx.clone(),
     )?;
+    joins.push(coordinator_join);
 
     // Wait for the coordinator and coordinator proxy to start.
     coordinator_ready
@@ -201,17 +228,20 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
 
     tracing::info!("Coordinator started.");
 
-    // Run the `setup1-contributor`.
-    let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join("contributor"))?;
-    let contributor_join = run_contributor(
-        contributor_bin_path,
-        contributor1_key_file_path,
-        setup_phase,
-        COORDINATOR_API_URL.to_string(),
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-        contributor_out_dir,
-    )?;
+    for contributor in contributors {
+        // Run the `setup1-contributor`.
+        let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
+        let contributor_join = run_contributor(
+            contributor_bin_path.clone(),
+            contributor.key_file,
+            setup_phase,
+            COORDINATOR_API_URL.to_string(),
+            ceremony_tx.clone(),
+            ceremony_rx.clone(),
+            contributor_out_dir,
+        )?;
+        joins.push(contributor_join);
+    }
 
     // Run the `setup1-verifier`.
     let verifier_bin_path = setup_build_output_dir.join("setup1-verifier");
@@ -224,12 +254,13 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
         ceremony_rx.clone(),
         verifier_out_dir,
     )?;
+    joins.push(verifier_join);
 
     tracing::info!("Waiting for round 1 to start.");
 
     round1_started
         .join()
-        .wrap_err("Error while waiting for round 1 to finish")?;
+        .wrap_err("Error while waiting for round 1 to start")?;
 
     tracing::info!("Round 1 has started!");
 
@@ -238,13 +269,13 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
     // checking the round's state.json file.
     round1_finished
         .join()
-        .wrap_err("Error while waiting for round 1 to finish")?;
+        .wrap_err("Error while waiting for round 1 to finish.")?;
 
     tracing::info!("Round 1 Finished (waiting for aggregation to complete).");
 
     round1_aggregated
         .join()
-        .wrap_err("Error while waiting for round 1 to aggregate")?;
+        .wrap_err("Error while waiting for round 1 to aggregate.")?;
 
     tracing::info!("Round 1 Aggregated, test complete.");
 
@@ -252,27 +283,9 @@ pub fn run_integration_test(options: &Options) -> eyre::Result<()> {
     // child processes.
     ceremony_tx
         .broadcast(CeremonyMessage::Shutdown)
-        .expect("unable to send shutdown message");
+        .expect("Unable to send shutdown message.");
 
-    // Wait for contributor threads to close after being told to shut down.
-    contributor_join
-        .join()
-        .expect("Error while joining contributor threads.");
-
-    // Wait for verifier threads to close after being told to shut down.
-    verifier_join
-        .join()
-        .expect("Error while joining verifier threads.");
-
-    // Wait for the coordinator threads to close after being told to shut down.
-    coordinator_join
-        .join()
-        .expect("Error while joining coordinator threads.");
-
-    // Wait for the coordinator proxy threads to close after being told to shut down.
-    coordinator_proxy_join
-        .join()
-        .expect("Error while joining coordinator proxy threads.");
-
+    // Wait for monitor threads to close after being told to shut down.
+    join_multiple(joins).expect("Error while joining monitor threads.");
     Ok(())
 }

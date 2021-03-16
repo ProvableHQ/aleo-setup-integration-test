@@ -2,7 +2,7 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use aleo_setup_integration_test::{
-    options::Options, reporting::setup_reporting, test::run_integration_test,
+    options::CmdOptions, reporting::setup_reporting, test::run_integration_test,
 };
 
 use structopt::StructOpt;
@@ -13,7 +13,7 @@ use structopt::StructOpt;
 fn main() -> eyre::Result<()> {
     setup_reporting()?;
 
-    let options: Options = Options::from_args();
+    let options: CmdOptions = CmdOptions::from_args();
 
     run_integration_test(&options)?;
 
