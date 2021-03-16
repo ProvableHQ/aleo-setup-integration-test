@@ -21,14 +21,14 @@ use std::{
 };
 
 /// The url for the `aleo-setup-coordinator` git repository.
-const COORDINATOR_REPO_URL: &str = "https://github.com/AleoHQ/aleo-setup-coordinator";
+const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator.git";
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
 const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
 
 /// The url for the `aleo-setup` git repository.
-const SETUP_REPO_URL: &str = "https://github.com/AleoHQ/aleo-setup";
+const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
 
 /// The directory that the `aleo-setup` repository is cloned to.
 const SETUP_DIR: &str = "aleo-setup";

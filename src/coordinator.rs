@@ -61,6 +61,7 @@ pub fn run_coordinator(
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
+        .arg("--setup")
         .arg(config.phase.to_string());
 
     let log_file_path = config.out_dir.join("coordinator.log");

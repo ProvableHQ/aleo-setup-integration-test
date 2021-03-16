@@ -14,5 +14,6 @@ where
         .arg("install")
         .join()
         .map_err(eyre::Error::from)
+        .map_err(|error| error.wrap_err(format!("Error running `npm install`")))
         .and_then(default_parse_exit_status)
 }
