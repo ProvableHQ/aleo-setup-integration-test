@@ -5,7 +5,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage, SetupPhase,
+    CeremonyMessage, Environment,
 };
 
 use eyre::Context;
@@ -13,10 +13,9 @@ use mpmc_bus::{Receiver, Sender};
 use serde::Deserialize;
 
 use std::{
-    ffi::OsStr,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[derive(Deserialize)]
@@ -29,17 +28,13 @@ pub struct ContributorKey {
 
 /// Use `setup1-contributor` to generate the contributor key file used
 /// in [run_contributor()].
-pub fn generate_contributor_key<PB, PK>(
-    contributor_bin_path: PB,
-    key_file_path: PK,
-) -> eyre::Result<ContributorKey>
-where
-    PB: AsRef<OsStr> + std::fmt::Debug,
-    PK: AsRef<OsStr>,
-{
+pub fn generate_contributor_key(
+    contributor_bin_path: impl AsRef<Path> + std::fmt::Debug,
+    key_file_path: impl AsRef<Path>,
+) -> eyre::Result<ContributorKey> {
     tracing::info!("Generating contributor key.");
 
-    subprocess::Exec::cmd(contributor_bin_path)
+    subprocess::Exec::cmd(contributor_bin_path.as_ref())
         .arg("generate")
         .args(&["--passphrase", "test"]) // <COORDINATOR_API_URL>
         .arg(key_file_path.as_ref()) // <KEYS_PATH>
@@ -47,38 +42,43 @@ where
         .map_err(eyre::Error::from)
         .and_then(default_parse_exit_status)?;
 
-    let key_file = File::open(Path::new(&key_file_path))?;
+    let key_file = File::open(key_file_path)?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
     Ok(contributor_key)
 }
 
 /// Run the `setup1-contributor`.
 pub fn run_contributor(
-    contributor_bin_path: PathBuf,
-    key_file_path: PathBuf,
-    setup_phase: SetupPhase,
-    coordinator_api_url: String,
+    id: &str,
+    contributor_bin_path: impl AsRef<Path>,
+    key_file_path: impl AsRef<Path>,
+    environment: Environment,
+    coordinator_api_url: &str,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    out_dir_path: PathBuf,
+    out_dir: impl AsRef<Path>,
 ) -> eyre::Result<MonitorProcessJoin> {
-    let key_file = File::open(Path::new(&key_file_path))?;
+    let key_file = File::open(&key_file_path)?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
 
-    let span = tracing::error_span!("contributor", address = contributor_key.address.as_str());
+    let span = tracing::error_span!(
+        "contributor",
+        id = id,
+        address = contributor_key.address.as_str()
+    );
     let _guard = span.enter();
 
     tracing::info!("Running contributor.");
 
-    let exec = subprocess::Exec::cmd(contributor_bin_path.canonicalize()?)
-        .cwd(&out_dir_path)
+    let exec = subprocess::Exec::cmd(contributor_bin_path.as_ref().canonicalize()?)
+        .cwd(&out_dir)
         .arg("contribute")
         .args(&["--passphrase", "test"])
-        .arg(format!("{}", setup_phase)) // <ENVIRONMENT>
+        .arg(format!("{}", environment)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(key_file_path.canonicalize()?);
+        .arg(key_file_path.as_ref().canonicalize()?);
 
-    let log_file_path = out_dir_path.join("contributor.log");
+    let log_file_path = out_dir.as_ref().join("contributor.log");
 
     run_monitor_process(
         exec,

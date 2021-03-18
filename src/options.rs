@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use structopt::StructOpt;
 
+use crate::Environment;
 /// Command line options for running the Aleo Setup integration test.
 #[derive(Debug, StructOpt, Serialize)]
 #[structopt(
@@ -41,4 +42,12 @@ pub struct CmdOptions {
     /// Path to where the log files, key files and transcripts are stored.
     #[structopt(long, short = "o", default_value = "out")]
     pub out_dir: PathBuf,
+
+    /// What environment to use for the setup.
+    #[structopt(
+        long,
+        default_value = Environment::str_variants()[0],
+        possible_values = Environment::str_variants(),
+    )]
+    pub environment: Environment,
 }

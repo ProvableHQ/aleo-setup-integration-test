@@ -10,16 +10,75 @@ use crate::{
     options::CmdOptions,
     process::{join_multiple, MonitorProcessJoin},
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
-    verifier::run_verifier,
-    CeremonyMessage, MessageWaiter, SetupPhase,
+    verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
+    CeremonyMessage, Environment, MessageWaiter,
 };
+
 use eyre::Context;
+use humantime::format_duration;
 use mpmc_bus::Bus;
+use serde::Serialize;
 
 use std::{
+    convert::TryFrom,
     path::{Path, PathBuf},
     str::FromStr,
 };
+
+/// Command line options for running the Aleo Setup integration test.
+#[derive(Debug, Serialize)]
+pub struct TestOptions {
+    /// Remove any artifacts created during a previous integration
+    /// test run before starting.
+    pub clean: bool,
+
+    /// Keep the git repositories. The following effects take place
+    /// when this is enabled:
+    ///
+    /// + Don't delete git repositories if [Options::clean] is
+    ///   enabled.
+    pub keep_repos: bool,
+
+    /// If true, don't attempt to install install prerequisites. Makes
+    /// the test faster for development purposes.
+    pub no_prereqs: bool,
+
+    /// Number of contributor participants for the test.
+    pub contributors: u8,
+
+    /// Number of verifier participants for the test.
+    pub verifiers: u8,
+
+    /// Path to where the log files, key files and transcripts are stored.
+    pub out_dir: PathBuf,
+
+    /// What environment to use for the setup.
+    pub environment: Environment,
+}
+
+impl TryFrom<&CmdOptions> for TestOptions {
+    type Error = eyre::Error;
+
+    fn try_from(options: &CmdOptions) -> Result<Self, Self::Error> {
+        Ok(Self {
+            clean: options.clean,
+            keep_repos: options.keep_repos,
+            no_prereqs: options.no_prereqs,
+            contributors: options.contributors,
+            verifiers: options.verifiers,
+            out_dir: options.out_dir.clone(),
+            environment: options.environment,
+        })
+    }
+}
+
+#[derive(Serialize)]
+pub struct TestResults {
+    /// The time between the start of the round, and the end of the
+    /// round.
+    #[serde(with = "humantime_serde")]
+    pub round_duration: std::time::Duration,
+}
 
 /// The url for the `aleo-setup-coordinator` git repository.
 const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator.git";
@@ -60,15 +119,22 @@ pub fn clone_git_repos() -> eyre::Result<()> {
     Ok(())
 }
 
+/// Data relating to a contributor.
 struct Contributor {
     id: String,
     key_file: PathBuf,
 }
 
+/// Data relating to a verifier.
+struct Verifier {
+    id: String,
+    view_key: VerifierViewKey,
+}
+
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
 /// is run.
-pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
+pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> {
     tracing::info!("Running integration test with options:\n{:#?}", &options);
 
     // Perfom the clean action if required.
@@ -102,7 +168,6 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
     let test_config_path = options.out_dir.join("test_config.json");
     std::fs::write(test_config_path, serde_json::to_string_pretty(&options)?)?;
 
-    let setup_phase = SetupPhase::Development;
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
 
@@ -123,7 +188,7 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
     let coordinator_config = CoordinatorConfig {
         crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
         setup_coordinator_bin: coordinator_bin_path,
-        phase: setup_phase,
+        environment: options.environment,
         out_dir: create_dir_if_not_exists(options.out_dir.join("coordinator"))?,
     };
 
@@ -146,18 +211,32 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
         &rust_1_47_nightly,
     )?;
 
+    // Build the setup1-cli-tools Rust project.
+    build_rust_crate(
+        Path::new(SETUP_DIR).join("setup1-cli-tools"),
+        &rust_1_47_nightly,
+    )?;
+
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
     let setup_build_output_dir = Path::new(SETUP_DIR).join("target/release");
 
-    // Create some mpmc channels for communicating between the various
-    // components that run during the integration test.
-    let bus: Bus<CeremonyMessage> = Bus::new(1000);
-    let ceremony_tx = bus.broadcaster();
-    let ceremony_rx = bus.subscribe();
+    let view_key_bin_path = setup_build_output_dir.join("view-key");
+
+    // Create the verifiers, generate their keys.
+    let verifiers: Vec<Verifier> = (1..=options.verifiers)
+        .into_iter()
+        .map(|i| {
+            let id = format!("verifier{}", i);
+            let view_key = generate_verifier_key(&view_key_bin_path)?;
+
+            Ok(Verifier { id, view_key })
+        })
+        .collect::<eyre::Result<Vec<Verifier>>>()?;
 
     let contributor_bin_path = setup_build_output_dir.join("aleo-setup-contributor");
 
+    // Create the contributors, generate their keys.
     let contributors: Vec<Contributor> = (1..=options.contributors)
         .into_iter()
         .map(|i| {
@@ -171,6 +250,12 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
             Ok(Contributor { id, key_file })
         })
         .collect::<eyre::Result<Vec<Contributor>>>()?;
+
+    // Create some mpmc channels for communicating between the various
+    // components that run during the integration test.
+    let bus: Bus<CeremonyMessage> = Bus::new(1000);
+    let ceremony_tx = bus.broadcaster();
+    let ceremony_rx = bus.subscribe();
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -232,10 +317,11 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
         // Run the `setup1-contributor`.
         let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
         let contributor_join = run_contributor(
+            &contributor.id,
             contributor_bin_path.clone(),
             contributor.key_file,
-            setup_phase,
-            COORDINATOR_API_URL.to_string(),
+            options.environment,
+            COORDINATOR_API_URL,
             ceremony_tx.clone(),
             ceremony_rx.clone(),
             contributor_out_dir,
@@ -243,18 +329,24 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
         joins.push(contributor_join);
     }
 
-    // Run the `setup1-verifier`.
-    let verifier_bin_path = setup_build_output_dir.join("setup1-verifier");
-    let verifier_out_dir = create_dir_if_not_exists(options.out_dir.join("verifier"))?;
-    let verifier_join = run_verifier(
-        verifier_bin_path,
-        setup_phase,
-        COORDINATOR_API_URL.to_string(),
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-        verifier_out_dir,
-    )?;
-    joins.push(verifier_join);
+    for verifier in verifiers {
+        // Run the `setup1-verifier`.
+        let verifier_bin_path = setup_build_output_dir.join("setup1-verifier");
+        let verifier_out_dir = create_dir_if_not_exists(options.out_dir.join(&verifier.id))?;
+        let verifier_join = run_verifier(
+            &verifier.id,
+            verifier_bin_path,
+            options.environment,
+            COORDINATOR_API_URL,
+            &verifier.view_key,
+            ceremony_tx.clone(),
+            ceremony_rx.clone(),
+            verifier_out_dir,
+        )?;
+        joins.push(verifier_join);
+    }
+
+    let start_time = std::time::Instant::now();
 
     tracing::info!("Waiting for round 1 to start.");
 
@@ -264,20 +356,24 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
 
     tracing::info!("Round 1 has started!");
 
-    // TODO: currently this message isn't displayed until the
-    // aggregation is complete. Perhaps this could be implemented by
-    // checking the round's state.json file.
-    round1_finished
-        .join()
-        .wrap_err("Error while waiting for round 1 to finish.")?;
-
-    tracing::info!("Round 1 Finished (waiting for aggregation to complete).");
+    // TODO: add another state between aggregated and started for when
+    // aggregation begins. Time the aggregation period and put it in
+    // the results.
 
     round1_aggregated
         .join()
         .wrap_err("Error while waiting for round 1 to aggregate.")?;
 
-    tracing::info!("Round 1 Aggregated, test complete.");
+    tracing::info!("Round 1 Aggregated.");
+
+    round1_finished
+        .join()
+        .wrap_err("Error while waiting for round 1 to finish.")?;
+
+    tracing::info!("Round 1 Finished.");
+
+    let round_duration = start_time.elapsed();
+    tracing::info!("Time taken: {}", format_duration(round_duration.clone()));
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
@@ -287,5 +383,13 @@ pub fn run_integration_test(options: &CmdOptions) -> eyre::Result<()> {
 
     // Wait for monitor threads to close after being told to shut down.
     join_multiple(joins).expect("Error while joining monitor threads.");
-    Ok(())
+
+    let results = TestResults { round_duration };
+
+    std::fs::write(
+        options.out_dir.join("results.json"),
+        serde_json::to_string_pretty(&results)?,
+    )?;
+
+    Ok(results)
 }

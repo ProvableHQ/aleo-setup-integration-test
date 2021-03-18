@@ -1,4 +1,5 @@
-use std::{fmt::Display, marker::PhantomData};
+use serde::Serialize;
+use std::{fmt::Display, marker::PhantomData, str::FromStr};
 
 use mpmc_bus::Receiver;
 
@@ -38,23 +39,42 @@ pub enum CeremonyMessage {
 }
 
 /// Which phase of the setup is to be run.
-///
-/// TODO: confirm is "Phase" the correct terminology here?
-#[derive(Debug, Clone, Copy)]
-pub enum SetupPhase {
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum Environment {
     Development,
     Inner,
     Outer,
     Universal,
 }
 
-impl Display for SetupPhase {
+impl Environment {
+    /// Available variants that can be parsed with [FromStr].
+    pub fn str_variants() -> &'static [&'static str] {
+        &["development", "inner", "outer", "universal"]
+    }
+}
+
+impl FromStr for Environment {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "development" => Ok(Self::Development),
+            "inner" => Ok(Self::Inner),
+            "outer" => Ok(Self::Outer),
+            "universal" => Ok(Self::Universal),
+            _ => Err(eyre::eyre!("unable to parse {:?} as a SetupPhase", s)),
+        }
+    }
+}
+
+impl Display for Environment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            SetupPhase::Development => "development",
-            SetupPhase::Inner => "inner",
-            SetupPhase::Outer => "outer",
-            SetupPhase::Universal => "universal",
+            Environment::Development => "development",
+            Environment::Inner => "inner",
+            Environment::Outer => "outer",
+            Environment::Universal => "universal",
         };
 
         write!(f, "{}", s)

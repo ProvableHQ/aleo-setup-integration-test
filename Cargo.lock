@@ -28,15 +28,19 @@ dependencies = [
 name = "aleo-setup-integration-test"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "color-eyre",
  "eyre",
+ "humantime",
+ "humantime-serde",
  "mpmc-bus",
  "regex",
  "serde",
  "serde_json",
  "structopt",
  "subprocess",
+ "timer",
  "tracing",
  "tracing-error",
  "tracing-subscriber",
@@ -142,6 +146,7 @@ dependencies = [
  "libc",
  "num-integer",
  "num-traits",
+ "serde",
  "time",
  "winapi",
 ]
@@ -271,6 +276,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "322f4de77956e22ed0e5032c359a0f1273f1f7f0d79bfa3b8ffbc730d7fbcc5c"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
+
+[[package]]
+name = "humantime-serde"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac34a56cfd4acddb469cc7fff187ed5ac36f498ba085caf8bbc725e3ff474058"
+dependencies = [
+ "humantime",
+ "serde",
 ]
 
 [[package]]
@@ -624,6 +645,15 @@ checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "timer"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31d42176308937165701f50638db1c31586f183f1aab416268216577aec7306b"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]

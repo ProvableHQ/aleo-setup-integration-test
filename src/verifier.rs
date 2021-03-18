@@ -5,7 +5,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage, SetupPhase,
+    CeremonyMessage, Environment,
 };
 
 use eyre::Context;
@@ -17,30 +17,70 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const VERIFIER_VIEW_KEY: &str = "AViewKey1qSVA1womAfkkGHzBxeptAz781b9stjaTj9fFnEU2TC47";
+pub struct VerifierViewKey(String);
+
+impl AsRef<str> for VerifierViewKey {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl std::fmt::Display for VerifierViewKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Use `setup1-contributor` to generate the contributor key file used
+/// in [run_contributor()].
+pub fn generate_verifier_key(
+    view_key_bin_path: impl AsRef<Path> + std::fmt::Debug,
+) -> eyre::Result<VerifierViewKey> {
+    tracing::info!("Generating verifier view key.");
+
+    let capture = subprocess::Exec::cmd(view_key_bin_path.as_ref())
+        .capture()
+        .map_err(eyre::Error::from)?;
+
+    default_parse_exit_status(capture.exit_status)?;
+
+    let view_key_out = capture.stdout_str();
+    let view_key = view_key_out
+        .split("\n")
+        .next()
+        .expect("Expected to be able to split view key output with \\n");
+
+    assert!(!view_key.is_empty());
+    tracing::info!("Generated view key: {}", view_key);
+
+    Ok(VerifierViewKey(view_key.to_string()))
+}
 
 /// Run the `setup1-verifier`.
 pub fn run_verifier(
-    verifier_bin_path: PathBuf,
-    setup_phase: SetupPhase,
-    coordinator_api_url: String,
+    id: &str,
+    verifier_bin_path: impl AsRef<Path>,
+    environment: Environment,
+    coordinator_api_url: &str,
+    view_key: &VerifierViewKey,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    out_dir_path: PathBuf,
+    out_dir: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin> {
-    let span = tracing::error_span!("verifier");
+    let view_key: &str = view_key.as_ref();
+    let span = tracing::error_span!("verifier", id = id, view_key = view_key);
     let _guard = span.enter();
 
     tracing::info!("Running verifier.");
 
-    let exec = subprocess::Exec::cmd(verifier_bin_path.canonicalize()?)
-        .cwd(&out_dir_path)
-        .arg(format!("{}", setup_phase)) // <ENVIRONMENT>
+    let exec = subprocess::Exec::cmd(verifier_bin_path.as_ref().canonicalize()?)
+        .cwd(&out_dir)
+        .arg(format!("{}", environment)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(VERIFIER_VIEW_KEY) // <VERIFIER_VIEW_KEY>
+        .arg(view_key) // <VERIFIER_VIEW_KEY>
         .arg("DEBUG"); // log level
 
-    let log_file_path = out_dir_path.join("verifier.log");
+    let log_file_path = out_dir.join("verifier.log");
 
     run_monitor_process(
         exec,
@@ -49,7 +89,7 @@ pub fn run_verifier(
         ceremony_rx,
         fallible_monitor(move |stdout, _ceremony_tx| verifier_monitor(stdout, &log_file_path)),
     )
-    .wrap_err_with(|| format!("Error running verifier {:?}", verifier_bin_path))
+    .wrap_err_with(|| format!("Error running verifier {:?}", verifier_bin_path.as_ref()))
 }
 
 /// Monitors the `setup1-contributor`, logs output to `log_file_path`

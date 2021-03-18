@@ -16,7 +16,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage, SetupPhase,
+    CeremonyMessage, Environment,
 };
 
 /// Copy the `Rocket.toml` config file from the
@@ -40,8 +40,8 @@ pub struct CoordinatorConfig {
     /// The location of the `aleo-setup-coordinator` binary (including
     /// the binary name).
     pub setup_coordinator_bin: PathBuf,
-    /// What phase of the setup ceremony to run.
-    pub phase: SetupPhase,
+    /// What environment to use while running the setup ceremony.
+    pub environment: Environment,
     /// The directory where all the artifacts produced while running
     /// the coordinator will be stored (and the current working
     /// directory for the process).
@@ -62,7 +62,7 @@ pub fn run_coordinator(
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
         .arg("--setup")
-        .arg(config.phase.to_string());
+        .arg(config.environment.to_string());
 
     let log_file_path = config.out_dir.join("coordinator.log");
     run_monitor_process(
