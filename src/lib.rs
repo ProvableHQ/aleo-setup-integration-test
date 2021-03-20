@@ -12,6 +12,7 @@ pub mod options;
 pub mod process;
 pub mod reporting;
 pub mod rust;
+pub mod state_monitor;
 pub mod test;
 pub mod verifier;
 
@@ -22,15 +23,19 @@ pub mod verifier;
 pub enum CeremonyMessage {
     /// Notify the receivers that the specified round has started.
     RoundStarted(u64),
-    /// Notify the receivers that the specified round has finished
-    /// sucessfully.
-    RoundFinished(u64),
+    /// Notify the receivers that the specified round has completed
+    /// verification, and aggregation of the contributions by the
+    /// coordinator has begun.
+    RoundStartedAggregation(u64),
     /// Notify the receivers that the specified round has successfully
     /// been aggregated.
     RoundAggregated(u64),
-    /// Notify the receivers that the coordinator rocket server is
-    /// ready to start receiving requests.
-    CoordinatorReady,
+    /// Notify the receivers that the specified round has finished
+    /// sucessfully.
+    RoundFinished(u64),
+    /// Notify the receivers that the coordinator is ready and waiting
+    /// for participants for the specified round before starting it.
+    RoundWaitingForParticipants(u64),
     /// Notify the receivers that the cordinator nodejs proxy is ready
     /// to start receiving requests.
     CoordinatorProxyReady,

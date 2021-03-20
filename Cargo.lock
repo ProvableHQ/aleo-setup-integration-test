@@ -34,6 +34,7 @@ dependencies = [
  "eyre",
  "humantime",
  "humantime-serde",
+ "lazy_static",
  "mpmc-bus",
  "regex",
  "serde",

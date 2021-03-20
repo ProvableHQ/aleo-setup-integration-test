@@ -50,4 +50,10 @@ pub struct CmdOptions {
         possible_values = Environment::str_variants(),
     )]
     pub environment: Environment,
+
+    /// Whether to run the `aleo-setup-state-monitor` application.
+    /// Requires `python3` and `pip` to be installed. Only supported
+    /// on Linux.
+    #[structopt(long)]
+    pub state_monitor: bool,
 }

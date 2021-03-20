@@ -10,6 +10,7 @@ use crate::{
     options::CmdOptions,
     process::{join_multiple, MonitorProcessJoin},
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
+    state_monitor::{run_state_monitor, setup_state_monitor},
     verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
     CeremonyMessage, Environment, MessageWaiter,
 };
@@ -21,6 +22,8 @@ use serde::Serialize;
 
 use std::{
     convert::TryFrom,
+    fs::File,
+    io::Write,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -54,6 +57,11 @@ pub struct TestOptions {
 
     /// What environment to use for the setup.
     pub environment: Environment,
+
+    /// Whether to run the `aleo-setup-state-monitor` application.
+    /// Requires `python3` and `pip` to be installed. Only supported
+    /// on Linux.
+    pub state_monitor: bool,
 }
 
 impl TryFrom<&CmdOptions> for TestOptions {
@@ -68,6 +76,7 @@ impl TryFrom<&CmdOptions> for TestOptions {
             verifiers: options.verifiers,
             out_dir: options.out_dir.clone(),
             environment: options.environment,
+            state_monitor: options.state_monitor,
         })
     }
 }
@@ -77,7 +86,10 @@ pub struct TestResults {
     /// The time between the start of the round, and the end of the
     /// round.
     #[serde(with = "humantime_serde")]
-    pub round_duration: std::time::Duration,
+    pub total_round_duration: std::time::Duration,
+    /// The time taken to perform aggregation at the end of a round.
+    #[serde(with = "humantime_serde")]
+    pub aggregation_duration: std::time::Duration,
 }
 
 /// The url for the `aleo-setup-coordinator` git repository.
@@ -86,6 +98,13 @@ const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
 const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+
+/// The url for the `aleo-setup-status-monitor` git repository.
+const STATE_MONITOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-state-monitor.git";
+
+/// The directory that the `aleo-setup-state-monitor` repository is
+/// cloned to.
+const STATE_MONITOR_DIR: &str = "aleo-setup-state-monitor";
 
 /// The url for the `aleo-setup` git repository.
 const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
@@ -111,11 +130,59 @@ where
 }
 
 /// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
-pub fn clone_git_repos() -> eyre::Result<()> {
+pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
     clone_git_repository(COORDINATOR_REPO_URL, COORDINATOR_DIR, "main")
         .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
     clone_git_repository(SETUP_REPO_URL, SETUP_DIR, "master")
         .wrap_err("Error while cloning the `aleo-setup` git repository.")?;
+
+    if options.state_monitor {
+        clone_git_repository(STATE_MONITOR_REPO_URL, STATE_MONITOR_DIR, "include-build")
+            .wrap_err("Error while cloning `aleo-setup-state-monitor` git repository.")?;
+    }
+
+    Ok(())
+}
+
+/// Create a bash script in the `out_dir` called `tail-logs.sh` which
+/// sets up a tmux session to view the logs using `tail` in real-time.
+fn write_tail_logs_script(
+    out_dir: impl AsRef<Path>,
+    contributors: &[Contributor],
+    verifiers: &[Verifier],
+) -> eyre::Result<()> {
+    let mut file = File::create(out_dir.as_ref().join("tail-logs.sh"))
+        .wrap_err("Unable to create `tail-logs.sh`")?;
+
+    file.write_all("#!/bin/sh\n".as_bytes())?;
+    file.write_all(
+        "tmux new-session -s test -n \"Coordinator\" -d 'tail -f coordinator/coordinator.log'\n"
+            .as_bytes(),
+    )?;
+    file.write_all("tmux new-window -t test:1 -n \"Coordinator Proxy\" 'tail -f coordinator_proxy/coordinator_proxy.log'\n".as_bytes())?;
+
+    let mut window_index: u8 = 2;
+
+    for contributor in contributors {
+        let command = format!(
+            "tmux new-window -t test:{0} -n \"{1}\" 'tail -f \"{1}/contributor.log\"'\n",
+            window_index, contributor.id
+        );
+        file.write_all(command.as_bytes())?;
+        window_index += 1;
+    }
+
+    for verifier in verifiers {
+        let command = format!(
+            "tmux new-window -t test:{0} -n \"{1}\" 'tail -f \"{1}/verifier.log\"'\n",
+            window_index, verifier.id
+        );
+        file.write_all(command.as_bytes())?;
+        window_index += 1;
+    }
+
+    file.write_all("tmux select-window -t test:0\ntmux -2 attach-session -t test\n".as_ref())?;
+
     Ok(())
 }
 
@@ -171,13 +238,18 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
 
+    clone_git_repos(&options)?;
+
     if !options.no_prereqs {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
         install_rust_toolchain(&rust_1_47_nightly)?;
+        // Install the dependencies for the setup coordinator nodejs proxy.
+        npm_install(COORDINATOR_DIR)?;
+        if options.state_monitor {
+            setup_state_monitor(STATE_MONITOR_DIR)?;
+        }
     }
-
-    clone_git_repos()?;
 
     // Build the setup coordinator Rust project.
     build_rust_crate(COORDINATOR_DIR, &rust_1_47_nightly)?;
@@ -193,11 +265,6 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     };
 
     deploy_coordinator_rocket_config(&coordinator_config)?;
-
-    if !options.no_prereqs {
-        // Install the dependencies for the setup coordinator nodejs proxy.
-        npm_install(COORDINATOR_DIR)?;
-    }
 
     // Build the setup1-contributor Rust project.
     build_rust_crate(
@@ -251,6 +318,8 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         })
         .collect::<eyre::Result<Vec<Contributor>>>()?;
 
+    write_tail_logs_script(&options.out_dir, &contributors, &verifiers)?;
+
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
     let bus: Bus<CeremonyMessage> = Bus::new(1000);
@@ -260,7 +329,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
         vec![
-            CeremonyMessage::CoordinatorReady,
+            CeremonyMessage::RoundWaitingForParticipants(1),
             CeremonyMessage::CoordinatorProxyReady,
         ],
         CeremonyMessage::Shutdown,
@@ -269,6 +338,12 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     let round1_started = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundStarted(1)],
+        CeremonyMessage::Shutdown,
+        ceremony_rx.clone(),
+    );
+
+    let round1_aggregation_started = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundStartedAggregation(1)],
         CeremonyMessage::Shutdown,
         ceremony_rx.clone(),
     );
@@ -299,12 +374,22 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     joins.push(coordinator_proxy_join);
 
     // Run the coordinator.
-    let coordinator_join = run_coordinator(
+    let coordinator_run_details = run_coordinator(
         &coordinator_config,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
     )?;
-    joins.push(coordinator_join);
+    let coordinator_transcript_dir = coordinator_run_details.transcript_dir.clone();
+    joins.push(coordinator_run_details.join);
+
+    let state_monitor_join = run_state_monitor(
+        STATE_MONITOR_DIR,
+        &coordinator_transcript_dir,
+        ceremony_tx.clone(),
+        ceremony_rx.clone(),
+        &options.out_dir,
+    )?;
+    joins.push(state_monitor_join);
 
     // Wait for the coordinator and coordinator proxy to start.
     coordinator_ready
@@ -346,7 +431,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         joins.push(verifier_join);
     }
 
-    let start_time = std::time::Instant::now();
+    let round_start_time = std::time::Instant::now();
 
     tracing::info!("Waiting for round 1 to start.");
 
@@ -356,13 +441,23 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     tracing::info!("Round 1 has started!");
 
-    // TODO: add another state between aggregated and started for when
-    // aggregation begins. Time the aggregation period and put it in
-    // the results.
+    round1_aggregation_started
+        .join()
+        .wrap_err("Error while waiting for round aggregation 1 to start")?;
+
+    let aggregation_start_time = std::time::Instant::now();
+
+    tracing::info!("Round 1 contributions and verifications complete. Aggregation has started.");
 
     round1_aggregated
         .join()
         .wrap_err("Error while waiting for round 1 to aggregate.")?;
+
+    let aggregation_duration = aggregation_start_time.elapsed();
+    tracing::info!(
+        "Aggregation time: {}",
+        format_duration(aggregation_duration.clone())
+    );
 
     tracing::info!("Round 1 Aggregated.");
 
@@ -372,8 +467,11 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     tracing::info!("Round 1 Finished.");
 
-    let round_duration = start_time.elapsed();
-    tracing::info!("Time taken: {}", format_duration(round_duration.clone()));
+    let total_round_duration = round_start_time.elapsed();
+    tracing::info!(
+        "Total round time: {}",
+        format_duration(total_round_duration.clone())
+    );
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
@@ -384,7 +482,10 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     // Wait for monitor threads to close after being told to shut down.
     join_multiple(joins).expect("Error while joining monitor threads.");
 
-    let results = TestResults { round_duration };
+    let results = TestResults {
+        total_round_duration,
+        aggregation_duration,
+    };
 
     std::fs::write(
         options.out_dir.join("results.json"),
