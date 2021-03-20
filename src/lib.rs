@@ -14,6 +14,7 @@ pub mod reporting;
 pub mod rust;
 pub mod state_monitor;
 pub mod test;
+pub mod time_limit;
 pub mod verifier;
 
 /// Message sent between the various components running during the

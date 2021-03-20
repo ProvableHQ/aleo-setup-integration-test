@@ -1,5 +1,4 @@
-//! Functions for controlling/running the coordinator nodejs proxy
-//! server.
+//! Functions for running/controlling the `aleo-setup-state-monitor` server.
 
 use crate::{
     process::{

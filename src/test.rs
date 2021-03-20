@@ -11,6 +11,7 @@ use crate::{
     process::{join_multiple, MonitorProcessJoin},
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, setup_state_monitor},
+    time_limit::start_ceremony_time_limit,
     verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
     CeremonyMessage, Environment, MessageWaiter,
 };
@@ -326,6 +327,12 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
+    let time_limit_join = start_ceremony_time_limit(
+        std::time::Duration::from_secs(20),
+        ceremony_tx.clone(),
+        ceremony_rx.clone(),
+    );
+
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
         vec![
@@ -479,8 +486,13 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         .broadcast(CeremonyMessage::Shutdown)
         .expect("Unable to send shutdown message.");
 
+    time_limit_join
+        .join()
+        .expect("error while joining time limit thread")?;
     // Wait for monitor threads to close after being told to shut down.
     join_multiple(joins).expect("Error while joining monitor threads.");
+
+    tracing::info!("All threads/processes joined, test complete!");
 
     let results = TestResults {
         total_round_duration,
