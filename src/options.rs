@@ -56,4 +56,15 @@ pub struct CmdOptions {
     /// on Linux.
     #[structopt(long)]
     pub state_monitor: bool,
+
+    /// Timout (in seconds) for running a ceremony round of the
+    /// integration test (not including setting up prerequisites). If
+    /// this time is exceeded for a given round, the test will fail.
+    #[structopt(long, short = "t", parse(try_from_str = parse_round_timout))]
+    pub round_timeout: Option<std::time::Duration>,
+}
+
+fn parse_round_timout(s: &str) -> eyre::Result<std::time::Duration> {
+    let seconds = s.parse::<u64>()?;
+    Ok(std::time::Duration::from_secs(seconds))
 }

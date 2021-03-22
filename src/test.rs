@@ -13,7 +13,7 @@ use crate::{
     state_monitor::{run_state_monitor, setup_state_monitor},
     time_limit::start_ceremony_time_limit,
     verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
-    CeremonyMessage, Environment, MessageWaiter,
+    CeremonyMessage, Environment, MessageWaiter, WaiterJoinCondition,
 };
 
 use eyre::Context;
@@ -63,6 +63,11 @@ pub struct TestOptions {
     /// Requires `python3` and `pip` to be installed. Only supported
     /// on Linux.
     pub state_monitor: bool,
+
+    /// Timout (in seconds) for running a ceremony round of the
+    /// integration test (not including setting up prerequisites). If
+    /// this time is exceeded for a given round, the test will fail.
+    pub round_timout: Option<std::time::Duration>,
 }
 
 impl TryFrom<&CmdOptions> for TestOptions {
@@ -78,6 +83,7 @@ impl TryFrom<&CmdOptions> for TestOptions {
             out_dir: options.out_dir.clone(),
             environment: options.environment,
             state_monitor: options.state_monitor,
+            round_timout: options.round_timeout,
         })
     }
 }
@@ -327,11 +333,9 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let time_limit_join = start_ceremony_time_limit(
-        std::time::Duration::from_secs(20),
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-    );
+    let time_limit_join = options.round_timout.map(|timeout| {
+        start_ceremony_time_limit(timeout, ceremony_tx.clone(), ceremony_rx.clone())
+    });
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -444,41 +448,51 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     round1_started
         .join()
-        .wrap_err("Error while waiting for round 1 to start")?;
-
-    tracing::info!("Round 1 has started!");
+        .wrap_err("Error while waiting for round 1 to start")?
+        .on_messages_received(|| tracing::info!("Round 1 has started!"));
 
     round1_aggregation_started
         .join()
-        .wrap_err("Error while waiting for round aggregation 1 to start")?;
+        .wrap_err("Error while waiting for round aggregation 1 to start")?
+        .on_messages_received(|| {
+            tracing::info!(
+                "Round 1 contributions and verifications complete. Aggregation has started."
+            )
+        });
 
     let aggregation_start_time = std::time::Instant::now();
 
-    tracing::info!("Round 1 contributions and verifications complete. Aggregation has started.");
-
-    round1_aggregated
+    let aggregation_duration = match round1_aggregated
         .join()
-        .wrap_err("Error while waiting for round 1 to aggregate.")?;
+        .wrap_err("Error while waiting for round 1 to aggregate.")?
+    {
+        WaiterJoinCondition::Shutdown => None,
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round 1 Aggregated.");
+            let aggregation_duration = aggregation_start_time.elapsed();
+            tracing::info!(
+                "Aggregation time: {}",
+                format_duration(aggregation_duration.clone())
+            );
+            Some(aggregation_duration)
+        }
+    };
 
-    let aggregation_duration = aggregation_start_time.elapsed();
-    tracing::info!(
-        "Aggregation time: {}",
-        format_duration(aggregation_duration.clone())
-    );
-
-    tracing::info!("Round 1 Aggregated.");
-
-    round1_finished
+    let total_round_duration = match round1_finished
         .join()
-        .wrap_err("Error while waiting for round 1 to finish.")?;
-
-    tracing::info!("Round 1 Finished.");
-
-    let total_round_duration = round_start_time.elapsed();
-    tracing::info!(
-        "Total round time: {}",
-        format_duration(total_round_duration.clone())
-    );
+        .wrap_err("Error while waiting for round 1 to finish.")?
+    {
+        WaiterJoinCondition::Shutdown => None,
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round 1 Finished.");
+            let total_round_duration = round_start_time.elapsed();
+            tracing::info!(
+                "Total round time: {}",
+                format_duration(total_round_duration.clone())
+            );
+            Some(total_round_duration)
+        }
+    };
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
@@ -486,17 +500,28 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         .broadcast(CeremonyMessage::Shutdown)
         .expect("Unable to send shutdown message.");
 
-    time_limit_join
-        .join()
-        .expect("error while joining time limit thread")?;
-    // Wait for monitor threads to close after being told to shut down.
+    // Wait for threads to close after being told to shut down.
     join_multiple(joins).expect("Error while joining monitor threads.");
+
+    // Joining time limit after the other threads because currnently
+    // it panics on an error, and want the other threads to have time
+    // to close gracefully.
+    match time_limit_join {
+        Some(handle) => {
+            handle
+                .join()
+                .expect("error while joining time limit thread")?;
+        }
+        None => {}
+    }
 
     tracing::info!("All threads/processes joined, test complete!");
 
     let results = TestResults {
-        total_round_duration,
-        aggregation_duration,
+        total_round_duration: total_round_duration
+            .unwrap_or_else(|| std::time::Duration::from_secs(0)),
+        aggregation_duration: aggregation_duration
+            .unwrap_or_else(|| std::time::Duration::from_secs(0)),
     };
 
     std::fs::write(

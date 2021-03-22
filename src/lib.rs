@@ -87,9 +87,30 @@ impl Display for Environment {
     }
 }
 
+/// The condition that caused the [MessageWaiter] to join.
+pub enum WaiterJoinCondition {
+    /// A ceremony shutdown was initiated.
+    Shutdown,
+    /// All the messages that the waiter was waiting for have been
+    /// received.
+    MessagesReceived,
+}
+
+impl WaiterJoinCondition {
+    pub fn on_messages_received<F>(&self, f: F)
+    where
+        F: FnOnce(),
+    {
+        match self {
+            WaiterJoinCondition::Shutdown => {}
+            WaiterJoinCondition::MessagesReceived => f(),
+        }
+    }
+}
+
 /// See [MessageWaiter::spawn()].
 pub struct MessageWaiter<T> {
-    join_handle: std::thread::JoinHandle<eyre::Result<()>>,
+    join_handle: std::thread::JoinHandle<eyre::Result<WaiterJoinCondition>>,
     message_type: PhantomData<T>,
 }
 
@@ -118,12 +139,12 @@ where
         mut expected_messages: Vec<T>,
         shutdown_message: T,
         mut rx: Receiver<T>,
-    ) -> eyre::Result<()> {
+    ) -> eyre::Result<WaiterJoinCondition> {
         while !expected_messages.is_empty() {
             let received_message = rx.recv()?;
 
             if received_message == shutdown_message {
-                break;
+                return Ok(WaiterJoinCondition::Shutdown);
             }
 
             if let Some(position) = expected_messages
@@ -134,15 +155,15 @@ where
             }
         }
 
-        Ok(())
+        Ok(WaiterJoinCondition::MessagesReceived)
     }
 
     /// Wait for all the expected messages to be received.
-    pub fn join(self) -> eyre::Result<()> {
+    pub fn join(self) -> eyre::Result<WaiterJoinCondition> {
         match self.join_handle.join() {
             Err(panic_error) => panic!(panic_error),
             Ok(Err(run_error)) => Err(run_error),
-            Ok(Ok(_)) => Ok(()),
+            Ok(Ok(join_condition)) => Ok(join_condition),
         }
     }
 }
