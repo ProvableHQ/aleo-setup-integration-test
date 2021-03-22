@@ -16,6 +16,8 @@ use crate::{
     Environment,
 };
 
+/// Specification for multiple tests to be performed. Will be
+/// deserialized from a json file.
 #[derive(Deserialize, Debug)]
 struct Specification {
     /// Remove any artifacts created during a previous integration
@@ -44,6 +46,9 @@ struct Specification {
     /// Specifications for the individual tests.
     pub tests: Vec<SingleTestOptions>,
 }
+
+/// Options for each individual test in the [Specification]'s `tests`
+/// field.
 #[derive(Deserialize, Debug)]
 struct SingleTestOptions {
     /// Id for the individual test.
@@ -149,12 +154,15 @@ pub fn run_multi_test(specification_file: impl AsRef<Path>) -> eyre::Result<()> 
         .filter(Result::is_err)
         .map(Result::unwrap_err)
         .map(|error| {
+            // Display error message for each error that occurs during individual tests.
             tracing::error!("{:?}", error);
             error
         })
         .collect();
 
     let n_errors = errors.len();
+
+    // Grab the last error which will be the one actually returned by this method.
     let last_error = errors.pop();
 
     let result = match last_error {
