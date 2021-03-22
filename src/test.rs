@@ -12,6 +12,7 @@ use crate::{
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, setup_state_monitor},
     time_limit::start_ceremony_time_limit,
+    util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
     CeremonyMessage, Environment, MessageWaiter, WaiterJoinCondition,
 };
@@ -19,7 +20,7 @@ use crate::{
 use eyre::Context;
 use humantime::format_duration;
 use mpmc_bus::Bus;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use std::{
     convert::TryFrom,
@@ -30,7 +31,7 @@ use std::{
 };
 
 /// Command line options for running the Aleo Setup integration test.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TestOptions {
     /// Remove any artifacts created during a previous integration
     /// test run before starting.
@@ -122,19 +123,6 @@ const SETUP_DIR: &str = "aleo-setup";
 /// URL used by the contributors and verifiers to connect to the
 /// coordinator.
 const COORDINATOR_API_URL: &str = "http://localhost:9000";
-
-/// Create a directory if it doesn't yet exist, and return it as a
-/// [PathBuf].
-fn create_dir_if_not_exists<P>(path: P) -> eyre::Result<PathBuf>
-where
-    P: AsRef<Path> + Into<PathBuf> + std::fmt::Debug,
-{
-    if !path.as_ref().exists() {
-        std::fs::create_dir(&path)
-            .wrap_err_with(|| format!("Error while creating path {:?}.", path))?;
-    }
-    Ok(path.into())
-}
 
 /// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
 pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {

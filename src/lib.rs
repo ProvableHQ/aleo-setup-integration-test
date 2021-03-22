@@ -1,12 +1,13 @@
-use serde::Serialize;
-use std::{fmt::Display, marker::PhantomData, str::FromStr};
-
 use mpmc_bus::Receiver;
+use serde::{Deserialize, Serialize};
+
+use std::{fmt::Display, marker::PhantomData, str::FromStr};
 
 pub mod contributor;
 pub mod coordinator;
 pub mod coordinator_proxy;
 pub mod git;
+pub mod multi;
 pub mod npm;
 pub mod options;
 pub mod process;
@@ -15,6 +16,7 @@ pub mod rust;
 pub mod state_monitor;
 pub mod test;
 pub mod time_limit;
+pub mod util;
 pub mod verifier;
 
 /// Message sent between the various components running during the
@@ -45,7 +47,7 @@ pub enum CeremonyMessage {
 }
 
 /// Which phase of the setup is to be run.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Environment {
     Development,
     Inner,

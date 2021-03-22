@@ -62,9 +62,24 @@ pub struct CmdOptions {
     /// this time is exceeded for a given round, the test will fail.
     #[structopt(long, short = "t", parse(try_from_str = parse_round_timout))]
     pub round_timeout: Option<std::time::Duration>,
+
+    #[structopt(subcommand)]
+    pub cmd: Option<Command>,
 }
 
 fn parse_round_timout(s: &str) -> eyre::Result<std::time::Duration> {
     let seconds = s.parse::<u64>()?;
     Ok(std::time::Duration::from_secs(seconds))
+}
+
+#[derive(Serialize, Debug, StructOpt)]
+pub enum Command {
+    /// Run multiple tests defined in a json file.
+    Multi(MultiTestOptions),
+}
+
+#[derive(Serialize, Debug, StructOpt)]
+pub struct MultiTestOptions {
+    /// json file specifying the test options.
+    pub specification_file: PathBuf,
 }
