@@ -49,9 +49,13 @@ pub enum CeremonyMessage {
 /// Which phase of the setup is to be run.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Environment {
+    #[serde(rename = "development")]
     Development,
+    #[serde(rename = "inner")]
     Inner,
+    #[serde(rename = "outer")]
     Outer,
+    #[serde(rename = "universal")]
     Universal,
 }
 
