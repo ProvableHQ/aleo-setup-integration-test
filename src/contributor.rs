@@ -15,7 +15,7 @@ use serde::Deserialize;
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[derive(Deserialize)]
@@ -45,6 +45,25 @@ pub fn generate_contributor_key(
     let key_file = File::open(key_file_path)?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
     Ok(contributor_key)
+}
+
+/// Data relating to a contributor.
+pub struct Contributor {
+    /// A short id used to reference this contributor with the
+    /// integration test. See [Contributor::coordinator_id()] for the id
+    /// that the coordinator uses to refer to the contributor.
+    pub id: String,
+    pub key_file: PathBuf,
+    /// Aleo address
+    pub address: String,
+}
+
+impl Contributor {
+    /// The id used to reference this contributor by the coordinator,
+    /// and within the ceremony transcript.
+    pub fn coordinator_id(&self) -> String {
+        format!("{}.contributor", self.address)
+    }
 }
 
 /// Run the `setup1-contributor`.

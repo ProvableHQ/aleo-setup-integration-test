@@ -2,8 +2,11 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use crate::{
-    contributor::{generate_contributor_key, run_contributor},
-    coordinator::{deploy_coordinator_rocket_config, run_coordinator, CoordinatorConfig},
+    contributor::{generate_contributor_key, run_contributor, Contributor},
+    coordinator::{
+        check_participants_in_round, deploy_coordinator_rocket_config, run_coordinator,
+        CoordinatorConfig,
+    },
     coordinator_proxy::run_coordinator_proxy,
     git::clone_git_repository,
     npm::npm_install,
@@ -13,7 +16,7 @@ use crate::{
     state_monitor::{run_state_monitor, setup_state_monitor},
     time_limit::start_ceremony_time_limit,
     util::create_dir_if_not_exists,
-    verifier::{generate_verifier_key, run_verifier, VerifierViewKey},
+    verifier::{generate_verifier_key, run_verifier, Verifier},
     CeremonyMessage, Environment, MessageWaiter, WaiterJoinCondition,
 };
 
@@ -181,18 +184,6 @@ fn write_tail_logs_script(
     Ok(())
 }
 
-/// Data relating to a contributor.
-struct Contributor {
-    id: String,
-    key_file: PathBuf,
-}
-
-/// Data relating to a verifier.
-struct Verifier {
-    id: String,
-    view_key: VerifierViewKey,
-}
-
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
 /// is run.
@@ -306,10 +297,14 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
             let contributor_key_file_name = format!("{}-key.json", id);
             let key_file = keys_dir_path.join(contributor_key_file_name);
 
-            generate_contributor_key(&contributor_bin_path, &key_file)
+            let contributor_key = generate_contributor_key(&contributor_bin_path, &key_file)
                 .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
 
-            Ok(Contributor { id, key_file })
+            Ok(Contributor {
+                id,
+                key_file,
+                address: contributor_key.address,
+            })
         })
         .collect::<eyre::Result<Vec<Contributor>>>()?;
 
@@ -321,9 +316,9 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let time_limit_join = options.round_timout.map(|timeout| {
-        start_ceremony_time_limit(timeout, ceremony_tx.clone(), ceremony_rx.clone())
-    });
+    let time_limit_join = options
+        .round_timout
+        .map(|timeout| start_ceremony_time_limit(timeout, ceremony_rx.clone()));
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -373,17 +368,17 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     joins.push(coordinator_proxy_join);
 
     // Run the coordinator.
-    let coordinator_run_details = run_coordinator(
+    let coordinator_join = run_coordinator(
         &coordinator_config,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
     )?;
-    let coordinator_transcript_dir = coordinator_run_details.transcript_dir.clone();
-    joins.push(coordinator_run_details.join);
+
+    joins.push(coordinator_join);
 
     let state_monitor_join = run_state_monitor(
         STATE_MONITOR_DIR,
-        &coordinator_transcript_dir,
+        &coordinator_config.transcript_dir(),
         ceremony_tx.clone(),
         ceremony_rx.clone(),
         &options.out_dir,
@@ -397,13 +392,13 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     tracing::info!("Coordinator started.");
 
-    for contributor in contributors {
+    for contributor in &contributors {
         // Run the `setup1-contributor`.
         let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
         let contributor_join = run_contributor(
             &contributor.id,
             contributor_bin_path.clone(),
-            contributor.key_file,
+            &contributor.key_file,
             options.environment,
             COORDINATOR_API_URL,
             ceremony_tx.clone(),
@@ -413,7 +408,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         joins.push(contributor_join);
     }
 
-    for verifier in verifiers {
+    for verifier in &verifiers {
         // Run the `setup1-verifier`.
         let verifier_bin_path = setup_build_output_dir.join("setup1-verifier");
         let verifier_out_dir = create_dir_if_not_exists(options.out_dir.join(&verifier.id))?;
@@ -430,14 +425,28 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         joins.push(verifier_join);
     }
 
+    let mut round_errors: Vec<eyre::Error> = Vec::new();
+
     let round_start_time = std::time::Instant::now();
 
     tracing::info!("Waiting for round 1 to start.");
 
-    round1_started
+    match round1_started
         .join()
         .wrap_err("Error while waiting for round 1 to start")?
-        .on_messages_received(|| tracing::info!("Round 1 has started!"));
+    {
+        WaiterJoinCondition::Shutdown => {}
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round 1 has started!");
+
+            if let Err(error) =
+                check_participants_in_round(&coordinator_config, 1, &contributors, &verifiers)
+            {
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+                round_errors.push(error);
+            }
+        }
+    }
 
     round1_aggregation_started
         .join()
@@ -482,28 +491,38 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         }
     };
 
-    // Tell the other threads to shutdown, safely terminating their
-    // child processes.
-    ceremony_tx
-        .broadcast(CeremonyMessage::Shutdown)
-        .expect("Unable to send shutdown message.");
-
-    // Wait for threads to close after being told to shut down.
-    join_multiple(joins).expect("Error while joining monitor threads.");
-
-    // Joining time limit after the other threads because currnently
-    // it panics on an error, and want the other threads to have time
-    // to close gracefully.
     match time_limit_join {
         Some(handle) => {
-            handle
+            if let Err(error) = handle
                 .join()
-                .expect("error while joining time limit thread")?;
+                .expect("error while joining time limit thread")
+            {
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+                round_errors.push(error);
+            }
         }
         None => {}
     }
 
+    // Tell the other threads to shutdown, safely terminating their
+    // child processes.
+    ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+
+    // Wait for threads to close after being told to shut down.
+    join_multiple(joins).expect("Error while joining monitor threads.");
+
     tracing::info!("All threads/processes joined, test complete!");
+
+    if !round_errors.is_empty() {
+        tracing::error!("Round completed with errors.");
+        for error in &round_errors {
+            tracing::error!("{:?}", error);
+        }
+
+        return Err(round_errors
+            .pop()
+            .expect("expected one error to be present"));
+    }
 
     let results = TestResults {
         total_round_duration: total_round_duration

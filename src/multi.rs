@@ -68,6 +68,14 @@ struct SingleTestOptions {
     /// this time is exceeded for a given round, the test will fail.
     #[serde(default)]
     pub round_timout: Option<u64>,
+
+    /// Whether to skip running this test.
+    #[serde(default = "skip_default")]
+    pub skip: bool,
+}
+
+fn skip_default() -> bool {
+    false
 }
 
 /// Run multiple tests specified in the json specification file.
@@ -101,9 +109,16 @@ pub fn run_multi_test(specification_file: impl AsRef<Path>) -> eyre::Result<()> 
     let mut errors: Vec<eyre::Error> = specification
         .tests
         .iter()
+        .filter(|options| {
+            if options.skip {
+                tracing::info!("Skipping test {}", options.id);
+                false
+            } else {
+                true
+            }
+        })
         .enumerate()
         .map(|(i, options)| {
-            tracing::info!("test {}", i);
             let test_id = &options.id;
             let out_dir = out_dir.join(test_id);
 

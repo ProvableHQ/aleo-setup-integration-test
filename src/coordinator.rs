@@ -10,12 +10,15 @@ use std::{
 use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 use regex::Regex;
+use serde::Deserialize;
 use subprocess::Exec;
 
 use crate::{
+    contributor::Contributor,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
+    verifier::Verifier,
     CeremonyMessage, Environment,
 };
 
@@ -48,9 +51,16 @@ pub struct CoordinatorConfig {
     pub out_dir: PathBuf,
 }
 
-pub struct CoordinatorRunDetails {
-    pub join: MonitorProcessJoin,
-    pub transcript_dir: PathBuf,
+impl CoordinatorConfig {
+    /// Calculates where the directory containing the ceremony
+    /// transcript is located.
+    pub fn transcript_dir(&self) -> PathBuf {
+        if let Environment::Development = self.environment {
+            self.out_dir.join("transcript/development")
+        } else {
+            self.out_dir.join("transcript")
+        }
+    }
 }
 
 /// Run the `aleo-setup-coordinator` rocket server.
@@ -58,7 +68,7 @@ pub fn run_coordinator(
     config: &CoordinatorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-) -> eyre::Result<CoordinatorRunDetails> {
+) -> eyre::Result<MonitorProcessJoin> {
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
 
@@ -81,15 +91,7 @@ pub fn run_coordinator(
         }),
     )?;
 
-    let transcript_dir = match config.environment {
-        Environment::Development => config.out_dir.join("transcript/development"),
-        _ => config.out_dir.join("transcript"),
-    };
-
-    Ok(CoordinatorRunDetails {
-        join,
-        transcript_dir,
-    })
+    Ok(join)
 }
 
 #[derive(Debug)]
@@ -177,7 +179,8 @@ impl CoordinatorStateReporter {
                 }
             }
             CoordinatorState::RoundFinished(1) => {
-                // TODO: multiple rounds are not yet supported.
+                // TODO Multiple rounds are not yet supported.
+                todo!();
             }
             _ => return Err(eyre::eyre!("unhandled state: {:?}", self.current_state)),
         }
@@ -226,6 +229,62 @@ fn monitor_coordinator(
                 )
             }
         }
+    }
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct RoundState {
+    /// The ids of the contributors in the round.
+    #[serde(rename = "contributorIds")]
+    contributor_ids: Vec<String>,
+    /// The ids of the verifiers in the round.
+    #[serde(rename = "verifierIds")]
+    verifier_ids: Vec<String>,
+}
+
+/// Check that the specified participants are in the specified round
+/// transcript.
+pub fn check_participants_in_round(
+    config: &CoordinatorConfig,
+    round: u64,
+    contributors: &[Contributor],
+    verifiers: &[Verifier],
+) -> eyre::Result<()> {
+    let state_file = config
+        .transcript_dir()
+        .join(format!("round_{}", round))
+        .join("state.json");
+
+    let state_file_str = std::fs::read_to_string(&state_file)
+        .wrap_err_with(|| eyre::eyre!("Unable to read state file: {:?}", &state_file))?;
+
+    let state: RoundState = serde_json::from_str(&state_file_str)
+        .wrap_err_with(|| eyre::eyre!("Unable to deserialize state file: {:?}", state_file))?;
+
+    for contributor in contributors {
+        state
+            .contributor_ids
+            .iter()
+            .find(|round_contributor_id| round_contributor_id == &&contributor.coordinator_id())
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "Unable to find contributor {} in round state file",
+                    contributor.coordinator_id()
+                )
+            })?;
+    }
+
+    // TODO: use the same logic as checking contributors, when I can
+    // calculate the verifier public key/coordinator id.
+    if verifiers.len() != state.verifier_ids.len() {
+        return Err(eyre::eyre!(
+            "Number of verifiers in the round {}, does not match \
+                the number of verifiers started for the round: {}",
+            state.verifier_ids.len(),
+            verifiers.len()
+        ));
     }
 
     Ok(())

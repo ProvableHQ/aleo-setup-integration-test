@@ -56,6 +56,15 @@ pub fn generate_verifier_key(
     Ok(VerifierViewKey(view_key.to_string()))
 }
 
+/// Data relating to a verifier.
+pub struct Verifier {
+    /// A short id used to reference this verifier with the
+    /// integration test. See [Verifier::coordinator_id()] for the id
+    /// that the coordinator uses to refer to the verifier.
+    pub id: String,
+    pub view_key: VerifierViewKey,
+}
+
 /// Run the `setup1-verifier`.
 pub fn run_verifier(
     id: &str,
