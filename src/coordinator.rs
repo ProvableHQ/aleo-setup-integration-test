@@ -180,7 +180,7 @@ impl CoordinatorStateReporter {
             }
             CoordinatorState::RoundFinished(1) => {
                 // TODO Multiple rounds are not yet supported.
-                todo!();
+                return Ok(());
             }
             _ => return Err(eyre::eyre!("unhandled state: {:?}", self.current_state)),
         }
