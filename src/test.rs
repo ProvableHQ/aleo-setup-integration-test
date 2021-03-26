@@ -493,25 +493,26 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         }
     };
 
-    match time_limit_join {
-        Some(handle) => {
-            if let Err(error) = handle
-                .join()
-                .expect("error while joining time limit thread")
-            {
-                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
-                round_errors.push(error);
-            }
-        }
-        None => {}
-    }
-
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
     ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
 
     // Wait for threads to close after being told to shut down.
     join_multiple(joins).expect("Error while joining monitor threads.");
+
+    match time_limit_join {
+        Some(handle) => {
+            if let Err(error) = handle
+                .join()
+                .expect("error while joining time limit thread")
+            {
+                tracing::error!("{:?}", error);
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+                round_errors.push(error);
+            }
+        }
+        None => {}
+    }
 
     tracing::info!("All threads/processes joined, test complete!");
 
