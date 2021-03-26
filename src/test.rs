@@ -376,14 +376,16 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     joins.push(coordinator_join);
 
-    let state_monitor_join = run_state_monitor(
-        STATE_MONITOR_DIR,
-        &coordinator_config.transcript_dir(),
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-        &options.out_dir,
-    )?;
-    joins.push(state_monitor_join);
+    if options.state_monitor {
+        let state_monitor_join = run_state_monitor(
+            STATE_MONITOR_DIR,
+            &coordinator_config.transcript_dir(),
+            ceremony_tx.clone(),
+            ceremony_rx.clone(),
+            &options.out_dir,
+        )?;
+        joins.push(state_monitor_join);
+    }
 
     // Wait for the coordinator and coordinator proxy to start.
     coordinator_ready
