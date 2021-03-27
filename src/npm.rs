@@ -7,7 +7,8 @@ use subprocess::Exec;
 use std::path::Path;
 
 /// Run `npm install` in the specified `run_directory`.
-pub fn npm_install(run_directory: impl AsRef<Path>) -> eyre::Result<()> {
+#[tracing::instrument(level = "error")]
+pub fn npm_install(run_directory: impl AsRef<Path> + std::fmt::Debug) -> eyre::Result<()> {
     Exec::cmd("npm")
         .cwd(run_directory)
         .arg("install")

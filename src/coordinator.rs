@@ -82,6 +82,7 @@ pub fn run_coordinator(
     let log_file_path = config.out_dir.join("coordinator.log");
 
     let join = run_monitor_process(
+        "coordinator".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,

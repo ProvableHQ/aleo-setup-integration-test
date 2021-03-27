@@ -316,9 +316,9 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let time_limit_join = options
-        .round_timout
-        .map(|timeout| start_ceremony_time_limit(timeout, ceremony_rx.clone()));
+    let time_limit_join = options.round_timout.map(|timeout| {
+        start_ceremony_time_limit(timeout, ceremony_rx.clone(), ceremony_tx.clone())
+    });
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -502,12 +502,12 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
 
     match time_limit_join {
         Some(handle) => {
+            tracing::debug!("Waiting for time limit to join");
             if let Err(error) = handle
                 .join()
                 .expect("error while joining time limit thread")
             {
                 tracing::error!("{:?}", error);
-                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
                 round_errors.push(error);
             }
         }

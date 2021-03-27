@@ -57,6 +57,7 @@ pub fn run_state_monitor(
     let log_file_path = out_dir.as_ref().join("state_monitor.log");
 
     let join = run_monitor_process(
+        "state_monitor".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
