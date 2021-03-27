@@ -100,6 +100,7 @@ pub fn run_contributor(
     let log_file_path = out_dir.as_ref().join("contributor.log");
 
     run_monitor_process(
+        id.to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,

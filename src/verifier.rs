@@ -92,6 +92,7 @@ pub fn run_verifier(
     let log_file_path = out_dir.join("verifier.log");
 
     run_monitor_process(
+        id.to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,

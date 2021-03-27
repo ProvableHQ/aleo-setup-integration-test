@@ -25,25 +25,39 @@ pub fn default_parse_exit_status(exit_status: subprocess::ExitStatus) -> eyre::R
 /// A join handle for the threads created in [wait_start_process()]
 #[must_use]
 pub struct MonitorProcessJoin {
-    listener_join: JoinHandle<()>,
+    id: String,
     monitor_join: JoinHandle<()>,
+    messages_join: JoinHandle<()>,
+}
+
+impl std::fmt::Debug for MonitorProcessJoin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MonitorProcessJoin({})", self.id)
+    }
 }
 
 impl MonitorProcessJoin {
     /// Join the threads
     pub fn join(self) -> std::thread::Result<()> {
-        let _ = self.listener_join.join()?;
+        let span = tracing::error_span!("join", id = %self.id);
+        let _guard = span.enter();
+
+        tracing::debug!("Joining listener thread.");
         let _ = self.monitor_join.join()?;
+        tracing::debug!("Joining messages thread.");
+        let _ = self.messages_join.join()?;
+        tracing::debug!("Joins Completed.");
+
         Ok(())
     }
 }
 
 /// Join multiple [MonitorProcessJoin]s.
-pub fn join_multiple<I: IntoIterator<Item = MonitorProcessJoin>>(
-    joins: I,
-) -> std::thread::Result<()> {
-    for join in joins.into_iter() {
+#[tracing::instrument(level = "error", skip(joins))]
+pub fn join_multiple(mut joins: Vec<MonitorProcessJoin>) -> std::thread::Result<()> {
+    while let Some(join) = joins.pop() {
         join.join()?;
+        tracing::debug!("Joins remaining: {:?}", joins);
     }
     Ok(())
 }
@@ -56,6 +70,7 @@ pub fn join_multiple<I: IntoIterator<Item = MonitorProcessJoin>>(
 /// determines whether the returned [subprocess::ExitStatus]
 /// constitutes an error, and returns an appropriate [eyre::Result].
 pub fn run_monitor_process<M>(
+    id: String,
     exec: Exec,
     parse_exit_status: fn(subprocess::ExitStatus) -> eyre::Result<()>,
     ceremony_tx: Sender<CeremonyMessage>,
@@ -83,9 +98,9 @@ where
 
     // Thread to run the `setup_coordinator_proxy_reader()` function.
     let coordinator_tx_listener = ceremony_tx.clone();
-    let listener_span = tracing::error_span!("listener");
-    let listener_join = std::thread::spawn(move || {
-        let _guard = listener_span.enter();
+    let monitor_span = tracing::error_span!("monitor");
+    let monitor_join = std::thread::spawn(move || {
+        let _guard = monitor_span.enter();
 
         monitor(stdout, coordinator_tx_listener.clone());
 
@@ -96,9 +111,11 @@ where
     // process if a `Shutdown` message is received. It also monitors
     // the exit status of the process, and if there was an error it
     // will request a `Shutdown` and panic with the error.
-    let monitor_span = tracing::error_span!("monitor");
-    let monitor_join = std::thread::spawn(move || {
-        let _guard = monitor_span.enter();
+    let messages_span = tracing::error_span!("messages");
+    let messages_join = std::thread::spawn(move || {
+        let _guard = messages_span.enter();
+
+        let mut shutdown = false;
 
         loop {
             // Sleep occasionally because otherwise this loop will run too fast.
@@ -107,10 +124,7 @@ where
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
                     CeremonyMessage::Shutdown => {
-                        tracing::info!("Telling the process to terminate.");
-                        process
-                            .terminate()
-                            .expect("Error while terminating process.");
+                        shutdown = true;
                     }
                     _ => {}
                 },
@@ -133,6 +147,16 @@ where
                         panic!("Error while running process: {}", error);
                     }
                 }
+            } else if shutdown == true {
+                // This will send SIGTERM until the shutdown is
+                // detected in process.poll(), just in case the
+                // process has bad signal handling qualities.
+                tracing::info!("Telling the process to terminate.");
+
+                if let Err(err) = process.terminate() {
+                    tracing::error!("Error while terminating process: {}. Thread closing.", err);
+                    return;
+                }
             }
         }
 
@@ -140,8 +164,9 @@ where
     });
 
     Ok(MonitorProcessJoin {
-        listener_join,
+        id,
         monitor_join,
+        messages_join,
     })
 }
 

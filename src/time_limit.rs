@@ -4,7 +4,7 @@ use std::{
 };
 
 use humantime::format_duration;
-use mpmc_bus::{Receiver, TryRecvError};
+use mpmc_bus::{Receiver, Sender, TryRecvError};
 
 use crate::CeremonyMessage;
 
@@ -14,6 +14,7 @@ use crate::CeremonyMessage;
 pub fn start_ceremony_time_limit(
     duration: std::time::Duration,
     mut ceremony_rx: Receiver<CeremonyMessage>,
+    ceremony_tx: Sender<CeremonyMessage>,
 ) -> JoinHandle<eyre::Result<()>> {
     let duration_formatted = format_duration(duration.clone());
     let span = tracing::error_span!("time_limit", duration=%&duration_formatted);
@@ -27,6 +28,8 @@ pub fn start_ceremony_time_limit(
             std::thread::sleep(Duration::from_millis(100));
 
             if start_time.elapsed() > duration {
+                tracing::error!("Time limit exceeded, telling ceremony to shutdown.");
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
                 return Err(eyre::eyre!(
                     "Time limit of {} for test has been exceeded.",
                     &duration_formatted

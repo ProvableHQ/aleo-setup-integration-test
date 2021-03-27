@@ -43,6 +43,7 @@ pub fn run_coordinator_proxy(
     let log_file_path = out_dir_path.join("coordinator_proxy.log");
 
     run_monitor_process(
+        "coordinator_proxy".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
