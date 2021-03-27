@@ -26,28 +26,24 @@
             "contributors": 3,
             "verifiers": 1,
             "environment": "inner",
-            "round_timout": 18000
-        },
-        {
-            "id": "1",
-            "contributors": 1,
-            "verifiers": 1,
-            "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "10",
             "contributors": 4,
             "verifiers": 1,
             "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "15",
             "contributors": 5,
             "verifiers": 1,
             "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "21",

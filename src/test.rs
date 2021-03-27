@@ -129,7 +129,7 @@ const COORDINATOR_API_URL: &str = "http://localhost:9000";
 
 /// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
 pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
-    clone_git_repository(COORDINATOR_REPO_URL, COORDINATOR_DIR, "main")
+    clone_git_repository(COORDINATOR_REPO_URL, COORDINATOR_DIR, "update-aleo-setup")
         .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
     clone_git_repository(SETUP_REPO_URL, SETUP_DIR, "master")
         .wrap_err("Error while cloning the `aleo-setup` git repository.")?;
