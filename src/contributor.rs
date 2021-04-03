@@ -61,7 +61,7 @@ pub struct Contributor {
 impl Contributor {
     /// The id used to reference this contributor by the coordinator,
     /// and within the ceremony transcript.
-    pub fn coordinator_id(&self) -> String {
+    pub fn id_on_coordinator(&self) -> String {
         format!("{}.contributor", self.address)
     }
 }

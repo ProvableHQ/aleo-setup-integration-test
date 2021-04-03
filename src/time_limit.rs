@@ -11,7 +11,7 @@ use crate::CeremonyMessage;
 /// Run a time limit thread for the specified duration. If the
 /// ceremony exceeds the timer, then this will send a shutdown
 /// message.
-pub fn start_ceremony_time_limit(
+pub fn ceremony_time_limit(
     duration: std::time::Duration,
     mut ceremony_rx: Receiver<CeremonyMessage>,
     ceremony_tx: Sender<CeremonyMessage>,
@@ -39,7 +39,7 @@ pub fn start_ceremony_time_limit(
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
                     CeremonyMessage::Shutdown => {
-                        tracing::info!("Telling the thread to terminate.");
+                        tracing::info!("Thread terminated gracefully");
                         return Ok(());
                     }
                     _ => {}

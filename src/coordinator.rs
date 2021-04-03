@@ -5,6 +5,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use eyre::Context;
@@ -19,7 +20,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     verifier::Verifier,
-    CeremonyMessage, Environment,
+    CeremonyMessage, Environment, Participant, ParticipantType,
 };
 
 /// Copy the `Rocket.toml` config file from the
@@ -127,22 +128,51 @@ lazy_static::lazy_static! {
     static ref ROUND1_STARTED_AGGREGATION_RE: Regex = Regex::new(".*Starting aggregation on round 1").unwrap();
     static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
     static ref ROUND1_FINISHED_RE: Regex = Regex::new(".*Round 1 is finished.*").unwrap();
+    static ref DROPPED_PARTICIPANT_RE: Regex = Regex::new(".*Dropping (?P<address>aleo[a-z0-9]+)[.](?P<participant_type>contributor|verifier) from the ceremony").unwrap();
 }
 
 impl CoordinatorStateReporter {
     /// Create a new [CoordinatorStateReporter] with the state that
     /// the process has just been started.
-    pub fn process_started(ceremony_tx: Sender<CeremonyMessage>) -> Self {
+    fn process_started(ceremony_tx: Sender<CeremonyMessage>) -> Self {
         Self {
             ceremony_tx,
             current_state: CoordinatorState::ProcessStarted,
         }
     }
 
+    /// Check whether a participant has been dropped from the round
+    /// (and broadcast this fact with [CeremonyMessage::ParticipantDropped]).
+    fn check_participant_dropped(&mut self, line: &str) -> eyre::Result<()> {
+        if let Some(captures) = DROPPED_PARTICIPANT_RE.captures(line) {
+            let address = captures
+                .name("address")
+                .expect("expected address group to be captured")
+                .as_str()
+                .to_string();
+            let participant_type_s = captures
+                .name("participant_type")
+                .expect("expected participant_type group to be captured")
+                .as_str();
+
+            let participant_type = ParticipantType::from_str(participant_type_s)?;
+
+            let participant = Participant {
+                participant_type,
+                address,
+            };
+
+            self.ceremony_tx
+                .broadcast(CeremonyMessage::ParticipantDropped(participant))?;
+        }
+
+        Ok(())
+    }
+
     /// Parse stdout line from the `coordinator` process, broadcast
     /// messages to the ceremony when the coordinator state changes.
     /// Keeps track of the current state of the ceremony.
-    pub fn parse_output_line(&mut self, line: &str) -> eyre::Result<()> {
+    fn parse_output_line(&mut self, line: &str) -> eyre::Result<()> {
         match self.current_state {
             CoordinatorState::ProcessStarted => {
                 if ROCKET_LAUNCH_RE.is_match(&line) {
@@ -152,6 +182,7 @@ impl CoordinatorStateReporter {
                 }
             }
             CoordinatorState::RoundWaitingForParticipants(1) => {
+                self.check_participant_dropped(line)?;
                 if ROUND1_STARTED_RE.is_match(&line) {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStarted(1))?;
@@ -159,6 +190,7 @@ impl CoordinatorStateReporter {
                 }
             }
             CoordinatorState::RoundRunning(1) => {
+                self.check_participant_dropped(line)?;
                 if ROUND1_STARTED_AGGREGATION_RE.is_match(&line) {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStartedAggregation(1))?;
@@ -190,10 +222,9 @@ impl CoordinatorStateReporter {
     }
 }
 
-/// Monitor the setup coordinator. Watches for the `Rocket has
-/// launched` message, which when it occurs emits a
-/// [CeremonyMessage::CoordinatorReady] message. Pipes the
-/// `stderr`/`stdout` to the [tracing::debug!()], and
+/// Monitor the setup coordinator. Parses the `stderr`/`stdout` and
+/// emits messages/alters state when certain events occur, and also
+/// pipes the output to the [tracing::debug!()], and
 /// `coordinator_log.txt` log file.
 fn monitor_coordinator(
     stdout: File,
@@ -268,11 +299,11 @@ pub fn check_participants_in_round(
         state
             .contributor_ids
             .iter()
-            .find(|round_contributor_id| round_contributor_id == &&contributor.coordinator_id())
+            .find(|round_contributor_id| round_contributor_id == &&contributor.id_on_coordinator())
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Unable to find contributor {} in round state file",
-                    contributor.coordinator_id()
+                    contributor.id_on_coordinator()
                 )
             })?;
     }

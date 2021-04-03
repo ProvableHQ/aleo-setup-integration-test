@@ -6,6 +6,7 @@ use std::{fmt::Display, marker::PhantomData, str::FromStr};
 pub mod contributor;
 pub mod coordinator;
 pub mod coordinator_proxy;
+pub mod drop_participant;
 pub mod git;
 pub mod multi;
 pub mod npm;
@@ -19,10 +20,41 @@ pub mod time_limit;
 pub mod util;
 pub mod verifier;
 
+/// Type of participant in the ceremony.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParticipantType {
+    Contributor,
+    Verifier,
+}
+
+impl FromStr for ParticipantType {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "contributor" => Ok(Self::Contributor),
+            "verifier" => Ok(Self::Verifier),
+            _ => Err(eyre::eyre!(
+                "Unable to parse ParticipantType from str: {:?}",
+                s
+            )),
+        }
+    }
+}
+
+/// A reference to a participant in the ceremony.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Participant {
+    pub participant_type: ParticipantType,
+    /// Public aleo address e.g.
+    /// `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
+    pub address: String,
+}
+
 /// Message sent between the various components running during the
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
-#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CeremonyMessage {
     /// Notify the receivers that the specified round has started.
     RoundStarted(u64),
@@ -42,6 +74,9 @@ pub enum CeremonyMessage {
     /// Notify the receivers that the cordinator nodejs proxy is ready
     /// to start receiving requests.
     CoordinatorProxyReady,
+    /// Notify the receivers that the coordinator has just dropped a
+    /// participant in the current round.
+    ParticipantDropped(Participant),
     /// Tell all the recievers to shut down.
     Shutdown,
 }

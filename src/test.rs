@@ -8,13 +8,14 @@ use crate::{
         CoordinatorConfig,
     },
     coordinator_proxy::run_coordinator_proxy,
+    drop_participant::monitor_drops,
     git::clone_git_repository,
     npm::npm_install,
     options::CmdOptions,
     process::{join_multiple, MonitorProcessJoin},
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, setup_state_monitor},
-    time_limit::start_ceremony_time_limit,
+    time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
     CeremonyMessage, Environment, MessageWaiter, WaiterJoinCondition,
@@ -316,9 +317,11 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
-    let time_limit_join = options.round_timout.map(|timeout| {
-        start_ceremony_time_limit(timeout, ceremony_rx.clone(), ceremony_tx.clone())
-    });
+    let time_limit_join = options
+        .round_timout
+        .map(|timeout| ceremony_time_limit(timeout, ceremony_rx.clone(), ceremony_tx.clone()));
+
+    let monitor_drops_join = monitor_drops(ceremony_rx.clone(), ceremony_tx.clone());
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -354,7 +357,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         ceremony_rx.clone(),
     );
 
-    let mut joins: Vec<MonitorProcessJoin> = Vec::new();
+    let mut process_joins: Vec<MonitorProcessJoin> = Vec::new();
 
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_out_dir =
@@ -365,7 +368,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         ceremony_rx.clone(),
         coordinator_proxy_out_dir,
     )?;
-    joins.push(coordinator_proxy_join);
+    process_joins.push(coordinator_proxy_join);
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
@@ -374,7 +377,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
         ceremony_rx.clone(),
     )?;
 
-    joins.push(coordinator_join);
+    process_joins.push(coordinator_join);
 
     if options.state_monitor {
         let state_monitor_join = run_state_monitor(
@@ -384,7 +387,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
             ceremony_rx.clone(),
             &options.out_dir,
         )?;
-        joins.push(state_monitor_join);
+        process_joins.push(state_monitor_join);
     }
 
     // Wait for the coordinator and coordinator proxy to start.
@@ -407,7 +410,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
             ceremony_rx.clone(),
             contributor_out_dir,
         )?;
-        joins.push(contributor_join);
+        process_joins.push(contributor_join);
     }
 
     for verifier in &verifiers {
@@ -424,7 +427,7 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
             ceremony_rx.clone(),
             verifier_out_dir,
         )?;
-        joins.push(verifier_join);
+        process_joins.push(verifier_join);
     }
 
     let mut round_errors: Vec<eyre::Error> = Vec::new();
@@ -498,7 +501,11 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
 
     // Wait for threads to close after being told to shut down.
-    join_multiple(joins).expect("Error while joining monitor threads.");
+    join_multiple(process_joins).expect("Error while joining monitor threads.");
+
+    monitor_drops_join
+        .join()
+        .expect("Error while monitor drops thread")?;
 
     match time_limit_join {
         Some(handle) => {
