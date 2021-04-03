@@ -167,7 +167,7 @@ where
     /// Wait for all the expected messages to be received.
     pub fn join(self) -> eyre::Result<WaiterJoinCondition> {
         match self.join_handle.join() {
-            Err(panic_error) => panic!(panic_error),
+            Err(_panic_error) => panic!("Thread panicked"),
             Ok(Err(run_error)) => Err(run_error),
             Ok(Ok(join_condition)) => Ok(join_condition),
         }
