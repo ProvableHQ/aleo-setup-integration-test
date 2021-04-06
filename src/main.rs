@@ -6,7 +6,7 @@ use std::convert::TryFrom;
 use aleo_setup_integration_test::{
     multi::run_multi_test,
     options::{CmdOptions, Command},
-    reporting::setup_reporting,
+    reporting::{setup_reporting, LogFileWriter},
     test::{run_integration_test, TestOptions},
 };
 
@@ -17,13 +17,14 @@ use structopt::StructOpt;
 /// this may accept command line arguments to configure how the test
 /// is run.
 fn main() -> eyre::Result<()> {
-    setup_reporting()?;
+    let log_writer = LogFileWriter::new();
+    let _guard = setup_reporting(log_writer.clone())?;
 
     let options: CmdOptions = CmdOptions::from_args();
 
     match options.cmd {
         Some(Command::Multi(multi_options)) => {
-            run_multi_test(&multi_options.specification_file).wrap_err_with(|| {
+            run_multi_test(&multi_options.specification_file, &log_writer).wrap_err_with(|| {
                 eyre::eyre!(
                     "Error while running tests specified in {:?}",
                     &multi_options.specification_file
@@ -31,7 +32,7 @@ fn main() -> eyre::Result<()> {
             })?;
         }
         None => {
-            run_integration_test(&TestOptions::try_from(&options)?)?;
+            run_integration_test(&TestOptions::try_from(&options)?, &log_writer)?;
         }
     }
 

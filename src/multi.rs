@@ -11,6 +11,7 @@ use eyre::Context;
 use serde::Deserialize;
 
 use crate::{
+    reporting::LogFileWriter,
     test::{run_integration_test, TestOptions},
     util::create_dir_if_not_exists,
     Environment,
@@ -79,7 +80,10 @@ fn skip_default() -> bool {
 }
 
 /// Run multiple tests specified in the json specification file.
-pub fn run_multi_test(specification_file: impl AsRef<Path>) -> eyre::Result<()> {
+pub fn run_multi_test(
+    specification_file: impl AsRef<Path>,
+    log_writer: &LogFileWriter,
+) -> eyre::Result<()> {
     let specification_string = std::fs::read_to_string(specification_file.as_ref())
         .wrap_err_with(|| eyre::eyre!("Error while reading specification json file"))?;
 
@@ -156,7 +160,7 @@ pub fn run_multi_test(specification_file: impl AsRef<Path>) -> eyre::Result<()> 
 
             tracing::info!("Running integration test with id {:?}", id);
 
-            run_integration_test(&options)
+            run_integration_test(&options, log_writer)
                 .map(|test_results| {
                     let test_results_str = serde_json::to_string_pretty(&test_results)
                         .expect("Unable to serialize test results");

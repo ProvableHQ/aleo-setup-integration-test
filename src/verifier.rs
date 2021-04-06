@@ -83,6 +83,7 @@ pub fn run_verifier(
 
     let exec = subprocess::Exec::cmd(verifier_bin_path.as_ref().canonicalize()?)
         .cwd(&out_dir)
+        .env("RUST_LOG", "debug,hyper=warn")
         .arg(format!("{}", environment)) // <ENVIRONMENT>
         .arg(coordinator_api_url) // <COORDINATOR_API_URL>
         .arg(view_key) // <VERIFIER_VIEW_KEY>

@@ -13,6 +13,7 @@ use crate::{
     npm::npm_install,
     options::CmdOptions,
     process::{join_multiple, MonitorProcessJoin},
+    reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, setup_state_monitor},
     time_limit::ceremony_time_limit,
@@ -188,7 +189,11 @@ fn write_tail_logs_script(
 /// The main method of the test, which runs the test. In the future
 /// this may accept command line arguments to configure how the test
 /// is run.
-pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> {
+pub fn run_integration_test(
+    options: &TestOptions,
+    log_writer: &LogFileWriter,
+) -> eyre::Result<TestResults> {
+    log_writer.set_no_out_file();
     tracing::info!("Running integration test with options:\n{:#?}", &options);
 
     // Perfom the clean action if required.
@@ -219,6 +224,8 @@ pub fn run_integration_test(options: &TestOptions) -> eyre::Result<TestResults> 
     }
 
     create_dir_if_not_exists(&options.out_dir)?;
+    log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
+
     let test_config_path = options.out_dir.join("test_config.json");
     std::fs::write(test_config_path, serde_json::to_string_pretty(&options)?)?;
 

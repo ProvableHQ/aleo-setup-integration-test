@@ -91,6 +91,7 @@ pub fn run_contributor(
 
     let exec = subprocess::Exec::cmd(contributor_bin_path.as_ref().canonicalize()?)
         .cwd(&out_dir)
+        .env("RUST_LOG", "debug,hyper=warn")
         .arg("contribute")
         .args(&["--passphrase", "test"])
         .arg(format!("{}", environment)) // <ENVIRONMENT>
