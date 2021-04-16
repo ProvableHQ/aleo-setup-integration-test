@@ -6,7 +6,7 @@ use eyre::Context;
 use mpmc_bus::{Receiver, Sender, TryRecvError};
 use subprocess::{Exec, Redirection};
 
-use crate::CeremonyMessage;
+use crate::{CeremonyMessage, ShutdownReason};
 
 /// Returns `Ok` if the `exit_status` is `Exited(0)` or `Signaled(15)`
 /// (terminated by the host?), otherwise returns an `Err`.
@@ -123,7 +123,7 @@ where
 
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
-                    CeremonyMessage::Shutdown => {
+                    CeremonyMessage::Shutdown(_) => {
                         shutdown = true;
                     }
                     _ => {}
@@ -142,7 +142,7 @@ where
                     }
                     Err(error) => {
                         ceremony_tx
-                            .broadcast(CeremonyMessage::Shutdown)
+                            .broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))
                             .expect("Error sending shutdown message");
                         panic!("Error while running process: {}", error);
                     }
@@ -181,7 +181,7 @@ where
     move |stdout: File, coordinator_tx: Sender<CeremonyMessage>| {
         if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone()) {
             // tell the other threads to shut down
-            let _ = coordinator_tx.broadcast(CeremonyMessage::Shutdown);
+            let _ = coordinator_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error));
             // TODO: change this into something that records the fatal message, and requests a shutdown.
             // when all threads/processes have shutdown, then proceed to panic.
             panic!("Error while running process monitor: {}", error);

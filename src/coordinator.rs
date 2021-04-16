@@ -5,7 +5,6 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 use eyre::Context;
@@ -20,7 +19,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     verifier::Verifier,
-    CeremonyMessage, Environment, Participant, ParticipantType,
+    CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef,
 };
 
 /// Copy the `Rocket.toml` config file from the
@@ -155,11 +154,15 @@ impl CoordinatorStateReporter {
                 .expect("expected participant_type group to be captured")
                 .as_str();
 
-            let participant_type = ParticipantType::from_str(participant_type_s)?;
-
-            let participant = Participant {
-                participant_type,
-                address,
+            let participant = match participant_type_s {
+                "contributor" => ParticipantRef::Contributor(ContributorRef { address }),
+                "verifier" => ParticipantRef::Verifier(VerifierRef { address }),
+                _ => {
+                    return Err(eyre::eyre!(
+                        "unknown participant type: {}",
+                        participant_type_s
+                    ))
+                }
             };
 
             self.ceremony_tx

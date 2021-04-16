@@ -6,7 +6,7 @@ use std::{
 use humantime::format_duration;
 use mpmc_bus::{Receiver, Sender, TryRecvError};
 
-use crate::CeremonyMessage;
+use crate::{CeremonyMessage, ShutdownReason};
 
 /// Run a time limit thread for the specified duration. If the
 /// ceremony exceeds the timer, then this will send a shutdown
@@ -29,7 +29,7 @@ pub fn ceremony_time_limit(
 
             if start_time.elapsed() > duration {
                 tracing::error!("Time limit exceeded, telling ceremony to shutdown.");
-                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
                 return Err(eyre::eyre!(
                     "Time limit of {} for test has been exceeded.",
                     &duration_formatted
@@ -38,7 +38,7 @@ pub fn ceremony_time_limit(
 
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
-                    CeremonyMessage::Shutdown => {
+                    CeremonyMessage::Shutdown(_) => {
                         tracing::info!("Thread terminated gracefully");
                         return Ok(());
                     }

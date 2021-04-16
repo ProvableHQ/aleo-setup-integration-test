@@ -11,6 +11,7 @@ use eyre::Context;
 use serde::Deserialize;
 
 use crate::{
+    drop_participant::DropContributorConfig,
     reporting::LogFileWriter,
     test::{run_integration_test, TestOptions},
     util::create_dir_if_not_exists,
@@ -73,6 +74,9 @@ struct SingleTestOptions {
     /// Whether to skip running this test.
     #[serde(default = "skip_default")]
     pub skip: bool,
+
+    #[serde(default)]
+    pub contributor_drops: Vec<DropContributorConfig>,
 }
 
 fn skip_default() -> bool {
@@ -126,6 +130,9 @@ pub fn run_multi_test(
             let test_id = &options.id;
             let out_dir = out_dir.join(test_id);
 
+            // The first test uses the keep_repos and no_prereqs
+            // option. Subsequent tests do not clean, and do not
+            // attempt to install prerequisites.
             let test_options = if i == 0 {
                 TestOptions {
                     clean: false,
@@ -137,6 +144,7 @@ pub fn run_multi_test(
                     environment: options.environment,
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
+                    contributor_drops: options.contributor_drops.clone(),
                 }
             } else {
                 TestOptions {
@@ -149,6 +157,7 @@ pub fn run_multi_test(
                     environment: options.environment,
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
+                    contributor_drops: options.contributor_drops.clone(),
                 }
             };
 

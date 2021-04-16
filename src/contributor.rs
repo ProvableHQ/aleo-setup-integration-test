@@ -5,7 +5,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage, Environment,
+    CeremonyMessage, ContributorRef, Environment,
 };
 
 use eyre::Context;
@@ -46,8 +46,8 @@ pub fn generate_contributor_key(
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
     Ok(contributor_key)
 }
-
 /// Data relating to a contributor.
+#[derive(Clone)]
 pub struct Contributor {
     /// A short id used to reference this contributor with the
     /// integration test. See [Contributor::coordinator_id()] for the id
@@ -55,6 +55,7 @@ pub struct Contributor {
     pub id: String,
     pub key_file: PathBuf,
     /// Aleo address
+    /// e.g. `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
     pub address: String,
 }
 
@@ -64,44 +65,64 @@ impl Contributor {
     pub fn id_on_coordinator(&self) -> String {
         format!("{}.contributor", self.address)
     }
+
+    pub fn as_contributor_ref(&self) -> ContributorRef {
+        ContributorRef {
+            address: self.address.clone(),
+        }
+    }
+}
+
+/// Configuration for running a contributor.
+#[derive(Debug)]
+pub struct ContributorConfig {
+    /// An identifier for this contributor, also used as the name of
+    /// the working directory for this contributor.
+    pub id: String,
+    /// The path to the binary to run this contributor,
+    pub contributor_bin_path: PathBuf,
+    /// The path to the key file used by this contributor.
+    pub key_file_path: PathBuf,
+    /// What type of ceremony will be performed.
+    pub environment: Environment,
+    /// The url to connect to the coordinator.
+    pub coordinator_api_url: String,
+    /// The out directory for the ceremony, the working directory for
+    /// this contributor is `out_dir`/`id`.
+    pub out_dir: PathBuf,
 }
 
 /// Run the `setup1-contributor`.
 pub fn run_contributor(
-    id: &str,
-    contributor_bin_path: impl AsRef<Path>,
-    key_file_path: impl AsRef<Path>,
-    environment: Environment,
-    coordinator_api_url: &str,
+    config: ContributorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-    out_dir: impl AsRef<Path>,
 ) -> eyre::Result<MonitorProcessJoin> {
-    let key_file = File::open(&key_file_path)?;
+    let key_file = File::open(&config.key_file_path)?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
 
     let span = tracing::error_span!(
         "contributor",
-        id = id,
-        address = contributor_key.address.as_str()
+        id = %config.id,
+        address = %contributor_key.address
     );
     let _guard = span.enter();
 
     tracing::info!("Running contributor.");
 
-    let exec = subprocess::Exec::cmd(contributor_bin_path.as_ref().canonicalize()?)
-        .cwd(&out_dir)
+    let exec = subprocess::Exec::cmd(&config.contributor_bin_path.canonicalize()?)
+        .cwd(&config.out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
         .arg("contribute")
         .args(&["--passphrase", "test"])
-        .arg(format!("{}", environment)) // <ENVIRONMENT>
-        .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(key_file_path.as_ref().canonicalize()?);
+        .arg(format!("{}", &config.environment)) // <ENVIRONMENT>
+        .arg(&config.coordinator_api_url) // <COORDINATOR_API_URL>
+        .arg(config.key_file_path.canonicalize()?);
 
-    let log_file_path = out_dir.as_ref().join("contributor.log");
+    let log_file_path = config.out_dir.join("contributor.log");
 
     run_monitor_process(
-        id.to_string(),
+        config.id.to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,

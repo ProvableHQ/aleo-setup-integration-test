@@ -11,7 +11,7 @@
             "verifiers": 1,
             "environment": "inner",
             "round_timout": 18000,
-            "skip": true
+            "skip": false
         },
         {
             "id": "3",
@@ -19,7 +19,7 @@
             "verifiers": 1,
             "environment": "inner",
             "round_timout": 18000,
-            "skip": true
+            "skip": false
         },
         {
             "id": "6",
@@ -27,7 +27,7 @@
             "verifiers": 1,
             "environment": "inner",
             "round_timout": 18000,
-            "skip": true
+            "skip": false
         },
         {
             "id": "10",
@@ -50,21 +50,24 @@
             "contributors": 1,
             "verifiers": 2,
             "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "23",
             "contributors": 2,
             "verifiers": 2,
             "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "26",
             "contributors": 3,
             "verifiers": 2,
             "environment": "inner",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "30",

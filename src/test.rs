@@ -2,13 +2,13 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use crate::{
-    contributor::{generate_contributor_key, run_contributor, Contributor},
+    contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
     coordinator::{
         check_participants_in_round, deploy_coordinator_rocket_config, run_coordinator,
         CoordinatorConfig,
     },
     coordinator_proxy::run_coordinator_proxy,
-    drop_participant::monitor_drops,
+    drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::clone_git_repository,
     npm::npm_install,
     options::CmdOptions,
@@ -19,7 +19,8 @@ use crate::{
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
-    CeremonyMessage, Environment, MessageWaiter, WaiterJoinCondition,
+    CeremonyMessage, ContributorRef, Environment, MessageWaiter, ShutdownReason,
+    WaiterJoinCondition,
 };
 
 use eyre::Context;
@@ -28,6 +29,7 @@ use mpmc_bus::Bus;
 use serde::{Deserialize, Serialize};
 
 use std::{
+    collections::HashMap,
     convert::TryFrom,
     fs::File,
     io::Write,
@@ -74,6 +76,8 @@ pub struct TestOptions {
     /// integration test (not including setting up prerequisites). If
     /// this time is exceeded for a given round, the test will fail.
     pub round_timout: Option<std::time::Duration>,
+
+    pub contributor_drops: Vec<DropContributorConfig>,
 }
 
 impl TryFrom<&CmdOptions> for TestOptions {
@@ -90,6 +94,7 @@ impl TryFrom<&CmdOptions> for TestOptions {
             environment: options.environment,
             state_monitor: options.state_monitor,
             round_timout: options.round_timeout,
+            contributor_drops: Vec::new(),
         })
     }
 }
@@ -110,7 +115,7 @@ const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
-const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+const COORDINATOR_DIR: &str = "../aleo-setup-coordinator";
 
 /// The url for the `aleo-setup-status-monitor` git repository.
 const STATE_MONITOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-state-monitor.git";
@@ -123,7 +128,7 @@ const STATE_MONITOR_DIR: &str = "aleo-setup-state-monitor";
 const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
 
 /// The directory that the `aleo-setup` repository is cloned to.
-const SETUP_DIR: &str = "aleo-setup";
+const SETUP_DIR: &str = "../aleo-setup";
 
 /// URL used by the contributors and verifiers to connect to the
 /// coordinator.
@@ -328,7 +333,27 @@ pub fn run_integration_test(
         .round_timout
         .map(|timeout| ceremony_time_limit(timeout, ceremony_rx.clone(), ceremony_tx.clone()));
 
-    let monitor_drops_join = monitor_drops(ceremony_rx.clone(), ceremony_tx.clone());
+    let contributor_drops = options
+        .contributor_drops
+        .iter()
+        .enumerate()
+        .map(|(i, drop_config)| {
+            let contributor: ContributorRef = contributors
+                .get(i)
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "There is no contributor corresponding to the drop config at index {}",
+                        i
+                    )
+                })?
+                .as_contributor_ref();
+            Ok((contributor, drop_config.clone()))
+        })
+        .collect::<eyre::Result<HashMap<ContributorRef, DropContributorConfig>>>()?;
+
+    let drops_config = MonitorDropsConfig { contributor_drops };
+
+    let monitor_drops_join = monitor_drops(drops_config, ceremony_rx.clone(), ceremony_tx.clone());
 
     // Watches the bus to determine when the coordinator and coordinator proxy are ready.
     let coordinator_ready = MessageWaiter::spawn(
@@ -336,31 +361,31 @@ pub fn run_integration_test(
             CeremonyMessage::RoundWaitingForParticipants(1),
             CeremonyMessage::CoordinatorProxyReady,
         ],
-        CeremonyMessage::Shutdown,
+        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
     let round1_started = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundStarted(1)],
-        CeremonyMessage::Shutdown,
+        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
     let round1_aggregation_started = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundStartedAggregation(1)],
-        CeremonyMessage::Shutdown,
+        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
     let round1_finished = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundFinished(1)],
-        CeremonyMessage::Shutdown,
+        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
     let round1_aggregated = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundAggregated(1)],
-        CeremonyMessage::Shutdown,
+        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
@@ -407,16 +432,17 @@ pub fn run_integration_test(
     for contributor in &contributors {
         // Run the `setup1-contributor`.
         let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
-        let contributor_join = run_contributor(
-            &contributor.id,
-            contributor_bin_path.clone(),
-            &contributor.key_file,
-            options.environment,
-            COORDINATOR_API_URL,
-            ceremony_tx.clone(),
-            ceremony_rx.clone(),
-            contributor_out_dir,
-        )?;
+        let contributor_config = ContributorConfig {
+            id: contributor.id.clone(),
+            contributor_bin_path: contributor_bin_path.clone(),
+            key_file_path: contributor.key_file.clone(),
+            environment: options.environment,
+            coordinator_api_url: COORDINATOR_API_URL.to_string(),
+            out_dir: contributor_out_dir,
+        };
+
+        let contributor_join =
+            run_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
         process_joins.push(contributor_join);
     }
 
@@ -454,7 +480,7 @@ pub fn run_integration_test(
             if let Err(error) =
                 check_participants_in_round(&coordinator_config, 1, &contributors, &verifiers)
             {
-                ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
                 round_errors.push(error);
             }
         }
@@ -505,7 +531,7 @@ pub fn run_integration_test(
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
-    ceremony_tx.broadcast(CeremonyMessage::Shutdown)?;
+    ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::TestFinished))?;
 
     // Wait for threads to close after being told to shut down.
     join_multiple(process_joins).expect("Error while joining monitor threads.");

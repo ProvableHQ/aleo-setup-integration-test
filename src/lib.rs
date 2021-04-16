@@ -20,41 +20,39 @@ pub mod time_limit;
 pub mod util;
 pub mod verifier;
 
-/// Type of participant in the ceremony.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ParticipantType {
-    Contributor,
-    Verifier,
-}
-
-impl FromStr for ParticipantType {
-    type Err = eyre::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "contributor" => Ok(Self::Contributor),
-            "verifier" => Ok(Self::Verifier),
-            _ => Err(eyre::eyre!(
-                "Unable to parse ParticipantType from str: {:?}",
-                s
-            )),
-        }
-    }
-}
-
-/// A reference to a participant in the ceremony.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Participant {
-    pub participant_type: ParticipantType,
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ContributorRef {
     /// Public aleo address e.g.
     /// `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
     pub address: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct VerifierRef {
+    /// Public aleo address e.g.
+    /// `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
+    pub address: String,
+}
+
+/// A reference to a participant in the ceremony.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ParticipantRef {
+    Contributor(ContributorRef),
+    Verifier(VerifierRef),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ShutdownReason {
+    Error,
+    TestFinished,
 }
 
 /// Message sent between the various components running during the
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum CeremonyMessage {
     /// Notify the receivers that the specified round has started.
     RoundStarted(u64),
@@ -76,9 +74,18 @@ pub enum CeremonyMessage {
     CoordinatorProxyReady,
     /// Notify the receivers that the coordinator has just dropped a
     /// participant in the current round.
-    ParticipantDropped(Participant),
+    ParticipantDropped(ParticipantRef),
     /// Tell all the recievers to shut down.
-    Shutdown,
+    Shutdown(ShutdownReason),
+}
+
+impl CeremonyMessage {
+    pub fn is_shutdown(&self) -> bool {
+        match self {
+            Self::Shutdown(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Which phase of the setup is to be run.
@@ -164,9 +171,12 @@ where
     /// specified `shutdown_message` is received. Call
     /// [MessageWaiter::join()] to block until all expected messages
     /// have been received.
-    pub fn spawn(expected_messages: Vec<T>, shutdown_message: T, rx: Receiver<T>) -> Self {
+    pub fn spawn<S>(expected_messages: Vec<T>, is_shutdown_message: S, rx: Receiver<T>) -> Self
+    where
+        S: Fn(&T) -> bool + Send + 'static,
+    {
         let join_handle =
-            std::thread::spawn(move || Self::listen(expected_messages, shutdown_message, rx));
+            std::thread::spawn(move || Self::listen(expected_messages, is_shutdown_message, rx));
 
         Self {
             join_handle,
@@ -176,15 +186,18 @@ where
 
     /// Listen to messages from `rx`, and remove equivalent message
     /// from `expected_messages` until `expected_messages` is empty.
-    fn listen(
+    fn listen<S>(
         mut expected_messages: Vec<T>,
-        shutdown_message: T,
+        is_shutdown_message: S,
         mut rx: Receiver<T>,
-    ) -> eyre::Result<WaiterJoinCondition> {
+    ) -> eyre::Result<WaiterJoinCondition>
+    where
+        S: Fn(&T) -> bool,
+    {
         while !expected_messages.is_empty() {
             let received_message = rx.recv()?;
 
-            if received_message == shutdown_message {
+            if is_shutdown_message(&received_message) {
                 return Ok(WaiterJoinCondition::Shutdown);
             }
 
