@@ -115,7 +115,7 @@ const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
-const COORDINATOR_DIR: &str = "../aleo-setup-coordinator";
+const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
 
 /// The url for the `aleo-setup-status-monitor` git repository.
 const STATE_MONITOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-state-monitor.git";
@@ -128,7 +128,7 @@ const STATE_MONITOR_DIR: &str = "aleo-setup-state-monitor";
 const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
 
 /// The directory that the `aleo-setup` repository is cloned to.
-const SETUP_DIR: &str = "../aleo-setup";
+const SETUP_DIR: &str = "aleo-setup";
 
 /// URL used by the contributors and verifiers to connect to the
 /// coordinator.
