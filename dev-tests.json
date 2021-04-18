@@ -10,11 +10,13 @@
             "contributors": 1,
             "verifiers": 1,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": false
         },
         {
             "id": "2",
             "contributors": 1,
+            "replacement_contributors": 1,
             "verifiers": 1,
             "environment": "development",
             "round_timout": 18000,
@@ -29,63 +31,72 @@
             "contributors": 2,
             "verifiers": 1,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "6",
             "contributors": 3,
             "verifiers": 1,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "10",
             "contributors": 4,
             "verifiers": 1,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "15",
             "contributors": 5,
             "verifiers": 1,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "21",
             "contributors": 1,
             "verifiers": 2,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "23",
             "contributors": 2,
             "verifiers": 2,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "26",
             "contributors": 3,
             "verifiers": 2,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "30",
             "contributors": 4,
             "verifiers": 2,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         },
         {
             "id": "35",
             "contributors": 5,
             "verifiers": 2,
             "environment": "development",
-            "round_timout": 18000
+            "round_timout": 18000,
+            "skip": true
         }
     ]
 }

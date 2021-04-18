@@ -47,6 +47,20 @@ struct CoordinatorJsonConfiguration {
     replacement_contributors: Vec<AleoPublicKey>,
 }
 
+impl From<&CoordinatorConfig> for CoordinatorJsonConfiguration {
+    fn from(config: &CoordinatorConfig) -> Self {
+        let replacement_contributors = config
+            .replacement_contributors
+            .iter()
+            .map(|c| c.address.clone())
+            .collect();
+
+        Self {
+            replacement_contributors,
+        }
+    }
+}
+
 /// Configuration for the [run_coordinator()] function to run
 /// `aleo-setup-coordinator` rocket server.
 #[derive(Debug)]
@@ -62,6 +76,8 @@ pub struct CoordinatorConfig {
     /// the coordinator will be stored (and the current working
     /// directory for the process).
     pub out_dir: PathBuf,
+    /// List of replacement contributors in use for the ceremony.
+    pub replacement_contributors: Vec<ContributorRef>,
 }
 
 impl CoordinatorConfig {
@@ -85,10 +101,23 @@ pub fn run_coordinator(
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
 
+    let json_config = CoordinatorJsonConfiguration::from(config);
+    let json_config_str = serde_json::to_string(&json_config)
+        .wrap_err("Error while serializing coordinator json config")?;
+    let json_config_path = config.out_dir.join("config.json");
+    std::fs::write(&json_config_path, &json_config_str)
+        .wrap_err("Error while writing corodinator config.json file")?;
+
     tracing::info!("Starting setup coordinator.");
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
+        .arg("--config")
+        .arg(
+            json_config_path
+                .canonicalize()
+                .wrap_err("cannot canonicalize json config path")?,
+        )
         .arg("--setup")
         .arg(config.environment.to_string());
 

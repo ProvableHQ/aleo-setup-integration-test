@@ -26,7 +26,7 @@ use crate::{
 use eyre::Context;
 use humantime::format_duration;
 use mpmc_bus::Bus;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use std::{
     collections::HashMap,
@@ -38,7 +38,7 @@ use std::{
 };
 
 /// Command line options for running the Aleo Setup integration test.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct TestOptions {
     /// Remove any artifacts created during a previous integration
     /// test run before starting.
@@ -57,6 +57,9 @@ pub struct TestOptions {
 
     /// Number of contributor participants for the test.
     pub contributors: u8,
+
+    /// Number of replacement contributors for the test.
+    pub replacement_contributors: u8,
 
     /// Number of verifier participants for the test.
     pub verifiers: u8,
@@ -77,6 +80,7 @@ pub struct TestOptions {
     /// this time is exceeded for a given round, the test will fail.
     pub round_timout: Option<std::time::Duration>,
 
+    /// Configuration for dropping contributors during the ceremony.
     pub contributor_drops: Vec<DropContributorConfig>,
 }
 
@@ -89,6 +93,7 @@ impl TryFrom<&CmdOptions> for TestOptions {
             keep_repos: options.keep_repos,
             no_prereqs: options.no_prereqs,
             contributors: options.contributors,
+            replacement_contributors: options.replacement_contributors,
             verifiers: options.verifiers,
             out_dir: options.out_dir.clone(),
             environment: options.environment,
@@ -151,9 +156,9 @@ pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
 
 /// Create a bash script in the `out_dir` called `tail-logs.sh` which
 /// sets up a tmux session to view the logs using `tail` in real-time.
-fn write_tail_logs_script(
+fn write_tail_logs_script<'c>(
     out_dir: impl AsRef<Path>,
-    contributors: &[Contributor],
+    contributors: impl IntoIterator<Item = &'c Contributor>,
     verifiers: &[Verifier],
 ) -> eyre::Result<()> {
     let mut file = File::create(out_dir.as_ref().join("tail-logs.sh"))
@@ -260,15 +265,6 @@ pub fn run_integration_test(
         .join("target/release")
         .join("aleo-setup-coordinator");
 
-    let coordinator_config = CoordinatorConfig {
-        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
-        setup_coordinator_bin: coordinator_bin_path,
-        environment: options.environment,
-        out_dir: create_dir_if_not_exists(options.out_dir.join("coordinator"))?,
-    };
-
-    deploy_coordinator_rocket_config(&coordinator_config)?;
-
     // Build the setup1-contributor Rust project.
     build_rust_crate(
         Path::new(SETUP_DIR).join("setup1-contributor"),
@@ -325,7 +321,45 @@ pub fn run_integration_test(
         })
         .collect::<eyre::Result<Vec<Contributor>>>()?;
 
-    write_tail_logs_script(&options.out_dir, &contributors, &verifiers)?;
+    // Create the replacement contributors, generate their keys.
+    let replacement_contributors: Vec<Contributor> = (1..=options.replacement_contributors)
+        .into_iter()
+        .map(|i| {
+            let id = format!("replacement_contributor{}", i);
+            let contributor_key_file_name = format!("{}-key.json", id);
+            let key_file = keys_dir_path.join(contributor_key_file_name);
+
+            let contributor_key = generate_contributor_key(&contributor_bin_path, &key_file)
+                .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
+
+            Ok(Contributor {
+                id,
+                key_file,
+                address: contributor_key.address,
+            })
+        })
+        .collect::<eyre::Result<Vec<Contributor>>>()?;
+
+    let replacement_contributor_refs: Vec<ContributorRef> = replacement_contributors
+        .iter()
+        .map(|c| c.as_contributor_ref())
+        .collect();
+
+    let coordinator_config = CoordinatorConfig {
+        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
+        setup_coordinator_bin: coordinator_bin_path,
+        environment: options.environment,
+        out_dir: create_dir_if_not_exists(options.out_dir.join("coordinator"))?,
+        replacement_contributors: replacement_contributor_refs,
+    };
+
+    deploy_coordinator_rocket_config(&coordinator_config)?;
+
+    write_tail_logs_script(
+        &options.out_dir,
+        contributors.iter().chain(replacement_contributors.iter()),
+        &verifiers,
+    )?;
 
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
@@ -432,7 +466,8 @@ pub fn run_integration_test(
 
     tracing::info!("Coordinator started.");
 
-    for contributor in &contributors {
+    // Run the contributors and replacement contributors.
+    for contributor in contributors.iter().chain(replacement_contributors.iter()) {
         // Run the `setup1-contributor`.
         let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
         let drop = contributor_drops

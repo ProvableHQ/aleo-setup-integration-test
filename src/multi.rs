@@ -62,6 +62,10 @@ struct SingleTestOptions {
     /// Number of verifier participants for the test.
     pub verifiers: u8,
 
+    /// Number of replacement contributors for the test.
+    #[serde(default = "default_replacement_contributors")]
+    pub replacement_contributors: u8,
+
     /// What environment to use for the setup.
     pub environment: Environment,
 
@@ -80,6 +84,11 @@ struct SingleTestOptions {
     /// configs should not exceed the number of contributors.
     #[serde(default)]
     pub contributor_drops: Vec<DropContributorConfig>,
+}
+
+/// Default value for [TestOptions::replacement_contributors].
+fn default_replacement_contributors() -> u8 {
+    0
 }
 
 fn skip_default() -> bool {
@@ -142,6 +151,7 @@ pub fn run_multi_test(
                     keep_repos: specification.keep_repos,
                     no_prereqs: specification.no_prereqs,
                     contributors: options.contributors,
+                    replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
                     out_dir,
                     environment: options.environment,
@@ -155,6 +165,7 @@ pub fn run_multi_test(
                     keep_repos: true,
                     no_prereqs: true,
                     contributors: options.contributors,
+                    replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
                     out_dir,
                     environment: options.environment,

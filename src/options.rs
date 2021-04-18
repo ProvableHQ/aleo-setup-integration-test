@@ -37,6 +37,10 @@ pub struct CmdOptions {
     #[structopt(long, default_value = "1")]
     pub contributors: u8,
 
+    /// Number of replacement contributors for the test.
+    #[structopt(long, default_value = "0")]
+    pub replacement_contributors: u8,
+
     /// Number of verifier participants for the test.
     #[structopt(long, default_value = "1")]
     pub verifiers: u8,
