@@ -58,9 +58,10 @@ pub fn generate_verifier_key(
 
 /// Data relating to a verifier.
 pub struct Verifier {
-    /// A short id used to reference this verifier with the
+    /// A short id used to reference this verifier within the
     /// integration test.
     pub id: String,
+    /// This verifier's view key.
     pub view_key: VerifierViewKey,
 }
 
@@ -91,15 +92,19 @@ pub fn run_verifier(
 
     let log_file_path = out_dir.join("verifier.log");
 
-    run_monitor_process(
+    let (join, _) = run_monitor_process(
         id.to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(move |stdout, _ceremony_tx| verifier_monitor(stdout, &log_file_path)),
+        fallible_monitor(move |stdout, _ceremony_tx, _monitor_tx| {
+            verifier_monitor(stdout, &log_file_path)
+        }),
     )
-    .wrap_err_with(|| format!("Error running verifier {:?}", verifier_bin_path.as_ref()))
+    .wrap_err_with(|| format!("Error running verifier {:?}", verifier_bin_path.as_ref()))?;
+
+    Ok(join)
 }
 
 /// Monitors the `setup1-contributor`, logs output to `log_file_path`

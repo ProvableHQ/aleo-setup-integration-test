@@ -5,6 +5,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use eyre::Context;
@@ -81,13 +82,13 @@ pub fn run_coordinator(
 
     let log_file_path = config.out_dir.join("coordinator.log");
 
-    let join = run_monitor_process(
+    let (join, _) = run_monitor_process(
         "coordinator".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(move |stdout, ceremony_tx| {
+        fallible_monitor(move |stdout, ceremony_tx, _monitor_tx| {
             monitor_coordinator(stdout, ceremony_tx, &log_file_path)
         }),
     )?;
@@ -128,6 +129,7 @@ lazy_static::lazy_static! {
     static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
     static ref ROUND1_FINISHED_RE: Regex = Regex::new(".*Round 1 is finished.*").unwrap();
     static ref DROPPED_PARTICIPANT_RE: Regex = Regex::new(".*Dropping (?P<address>aleo[a-z0-9]+)[.](?P<participant_type>contributor|verifier) from the ceremony").unwrap();
+    static ref SUCCESSFUL_CONTRIBUTION_RE: Regex = Regex::new(".*Added contribution from ((?P<address>aleo[a-z0-9]+)[.]contributor) for chunk (?P<chunk>[0-9]+)").unwrap();
 }
 
 impl CoordinatorStateReporter {
@@ -198,6 +200,34 @@ impl CoordinatorStateReporter {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStartedAggregation(1))?;
                     self.current_state = CoordinatorState::RoundAggregating(1);
+                }
+
+                if let Some(captures) = SUCCESSFUL_CONTRIBUTION_RE.captures(line) {
+                    let address = captures
+                        .name("address")
+                        .expect("expected address group to be captured")
+                        .as_str()
+                        .to_string();
+
+                    let chunk = u64::from_str(
+                        captures
+                            .name("chunk")
+                            .expect("exprected chunk address to be captured")
+                            .as_str(),
+                    )?;
+
+                    tracing::info!(
+                        "Contributor {} made a successful contribution to chunk {}.",
+                        &address,
+                        &chunk
+                    );
+
+                    let contributor = ContributorRef { address };
+                    self.ceremony_tx
+                        .broadcast(CeremonyMessage::SuccessfulContribution {
+                            contributor,
+                            chunk,
+                        })?;
                 }
             }
             CoordinatorState::RoundAggregating(1) => {

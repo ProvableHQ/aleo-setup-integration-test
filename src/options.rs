@@ -7,6 +7,8 @@ use structopt::StructOpt;
 
 use crate::Environment;
 /// Command line options for running the Aleo Setup integration test.
+/// More complex options (such as drops) are available via the `multi`
+/// command interface by specifying the test in `json` format.
 #[derive(Debug, StructOpt, Serialize)]
 #[structopt(
     name = "Aleo Setup Integration Test",

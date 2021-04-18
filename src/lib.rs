@@ -20,6 +20,7 @@ pub mod time_limit;
 pub mod util;
 pub mod verifier;
 
+/// A reference to a contributor in the ceremony.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ContributorRef {
     /// Public aleo address e.g.
@@ -27,6 +28,13 @@ pub struct ContributorRef {
     pub address: String,
 }
 
+impl std::fmt::Display for ContributorRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.address.fmt(f)
+    }
+}
+
+/// A reference to a verifier in the ceremony.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VerifierRef {
     /// Public aleo address e.g.
@@ -75,6 +83,12 @@ pub enum CeremonyMessage {
     /// Notify the receivers that the coordinator has just dropped a
     /// participant in the current round.
     ParticipantDropped(ParticipantRef),
+    /// The coordinator has successfully received a contribution from
+    /// a contributor at a given chunk.
+    SuccessfulContribution {
+        contributor: ContributorRef,
+        chunk: u64,
+    },
     /// Tell all the recievers to shut down.
     Shutdown(ShutdownReason),
 }

@@ -5,17 +5,26 @@ use serde::{Deserialize, Serialize};
 
 use std::{collections::HashMap, thread::JoinHandle};
 
+/// The configuration for dropping a contributor from the ceremony.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DropContributorConfig {
-    /// Contributor is dropped (process killed) after having made this
-    /// number of contributions.
+    /// A contributor is dropped (process killed) after having made
+    /// this number of contributions.
     pub after_contributions: u64,
 }
 
+/// Configuration for running [monitor_drops()].
 pub struct MonitorDropsConfig {
+    /// Expected dropped contributors. If not all drops specified here
+    /// have occurred by the time the [monitor_drops()] thread shuts
+    /// down at the end of the test, then an error will be returned
+    /// during join.
     pub contributor_drops: HashMap<ContributorRef, DropContributorConfig>,
 }
 
+/// Monitor the ceremony for dropped contributors. Returns an error if
+/// an unexpected drop occurs or if not all expected drops have
+/// occurred.
 pub fn monitor_drops(
     config: MonitorDropsConfig,
     mut ceremony_rx: Receiver<CeremonyMessage>,
@@ -28,7 +37,17 @@ pub fn monitor_drops(
 
         loop {
             match ceremony_rx.recv()? {
-                CeremonyMessage::Shutdown(_) => {
+                CeremonyMessage::Shutdown(reason) => {
+                    if let ShutdownReason::TestFinished = reason {
+                        if !contributor_drops.is_empty() {
+                            return Err(eyre::eyre!(
+                                "The specified drops did not occur as \
+                                    expected during the ceremony: {:?}",
+                                contributor_drops
+                            ));
+                        }
+                    }
+
                     tracing::info!("Thread terminated gracefully");
                     return Ok(());
                 }

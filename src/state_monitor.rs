@@ -56,13 +56,13 @@ pub fn run_state_monitor(
 
     let log_file_path = out_dir.as_ref().join("state_monitor.log");
 
-    let join = run_monitor_process(
+    let (join, _) = run_monitor_process(
         "state_monitor".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(move |stdout, ceremony_tx| {
+        fallible_monitor(move |stdout, ceremony_tx, _monitor_tx| {
             monitor_state_monitor(stdout, ceremony_tx, &log_file_path)
         }),
     )?;

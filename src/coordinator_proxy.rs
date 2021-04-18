@@ -42,16 +42,18 @@ pub fn run_coordinator_proxy(
 
     let log_file_path = out_dir_path.join("coordinator_proxy.log");
 
-    run_monitor_process(
+    let (join, _) = run_monitor_process(
         "coordinator_proxy".to_string(),
         exec,
         default_parse_exit_status,
         ceremony_tx,
         ceremony_rx,
-        fallible_monitor(move |stdout, ceremony_tx| {
+        fallible_monitor(move |stdout, ceremony_tx, _monitor_tx| {
             setup_coordinator_proxy_monitor(stdout, ceremony_tx, &log_file_path)
         }),
-    )
+    )?;
+
+    Ok(join)
 }
 
 /// This function reads stdout from the setup coordinator nodejs proxy

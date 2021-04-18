@@ -52,14 +52,33 @@ impl MonitorProcessJoin {
     }
 }
 
+impl MultiJoinable for MonitorProcessJoin {
+    fn join(self: Box<Self>) -> std::thread::Result<()> {
+        MonitorProcessJoin::join(*self)
+    }
+}
+
+/// A thread joiner that can be joined using [join_multiple()].
+pub trait MultiJoinable: std::fmt::Debug {
+    fn join(self: Box<Self>) -> std::thread::Result<()>;
+}
+
 /// Join multiple [MonitorProcessJoin]s.
 #[tracing::instrument(level = "error", skip(joins))]
-pub fn join_multiple(mut joins: Vec<MonitorProcessJoin>) -> std::thread::Result<()> {
+pub fn join_multiple(mut joins: Vec<Box<dyn MultiJoinable>>) -> std::thread::Result<()> {
     while let Some(join) = joins.pop() {
         join.join()?;
         tracing::debug!("Joins remaining: {:?}", joins);
     }
     Ok(())
+}
+
+/// Message to the [run_monitor_process()] messages thread from the
+/// monitor thread.
+#[derive(Clone)]
+pub enum MonitorProcessMessage {
+    /// Terminate the running process.
+    Terminate,
 }
 
 /// Starts the process specified in `exec`, with `stdout` set to
@@ -76,9 +95,9 @@ pub fn run_monitor_process<M>(
     ceremony_tx: Sender<CeremonyMessage>,
     mut ceremony_rx: Receiver<CeremonyMessage>,
     monitor: M,
-) -> eyre::Result<MonitorProcessJoin>
+) -> eyre::Result<(MonitorProcessJoin, Sender<MonitorProcessMessage>)>
 where
-    M: Fn(File, Sender<CeremonyMessage>) + Send + Sync + 'static,
+    M: Fn(File, Sender<CeremonyMessage>, Sender<MonitorProcessMessage>) + Send + Sync + 'static,
 {
     tracing::info!("Starting process.");
 
@@ -96,35 +115,51 @@ where
     std::mem::swap(&mut process.stdout, &mut stdout);
     let stdout = stdout.ok_or_else(|| eyre::eyre!("Unable to obtain process `stdout`."))?;
 
+    let monitor_bus = mpmc_bus::Bus::new(5);
+    let return_monitor_tx = monitor_bus.broadcaster();
+
     // Thread to run the `setup_coordinator_proxy_reader()` function.
-    let coordinator_tx_listener = ceremony_tx.clone();
+    let monitor_ceremony_tx = ceremony_tx.clone();
+    let monitor_tx = monitor_bus.broadcaster();
     let monitor_span = tracing::error_span!("monitor");
     let monitor_join = std::thread::spawn(move || {
         let _guard = monitor_span.enter();
 
-        monitor(stdout, coordinator_tx_listener.clone());
+        monitor(stdout, monitor_ceremony_tx.clone(), monitor_tx);
 
         tracing::debug!("Thread closing gracefully.")
     });
 
-    // This thread monitors messages, and terminates the nodejs
-    // process if a `Shutdown` message is received. It also monitors
-    // the exit status of the process, and if there was an error it
-    // will request a `Shutdown` and panic with the error.
+    // This thread monitors messages from other processes, and
+    // terminates the process if a `Shutdown` message is received. It
+    // also monitors the exit status of the process, and if there was
+    // an error it will request a `Shutdown` and panic with the error.
     let messages_span = tracing::error_span!("messages");
     let messages_join = std::thread::spawn(move || {
         let _guard = messages_span.enter();
+        let mut monitor_rx = monitor_bus.subscribe();
 
-        let mut shutdown = false;
+        // Terminate the process at the end of the loop, and break.
+        let mut terminate_process = false;
 
         loop {
             // Sleep occasionally because otherwise this loop will run too fast.
             std::thread::sleep(Duration::from_millis(100));
 
+            match monitor_rx.try_recv() {
+                Ok(message) => match message {
+                    MonitorProcessMessage::Terminate => terminate_process = true,
+                },
+                Err(TryRecvError::Disconnected) => {
+                    panic!("`monitor_rx` disconnected");
+                }
+                Err(TryRecvError::Empty) => {}
+            }
+
             match ceremony_rx.try_recv() {
                 Ok(message) => match message {
                     CeremonyMessage::Shutdown(_) => {
-                        shutdown = true;
+                        terminate_process = true;
                     }
                     _ => {}
                 },
@@ -147,7 +182,7 @@ where
                         panic!("Error while running process: {}", error);
                     }
                 }
-            } else if shutdown == true {
+            } else if terminate_process == true {
                 // This will send SIGTERM until the shutdown is
                 // detected in process.poll(), just in case the
                 // process has bad signal handling qualities.
@@ -155,31 +190,42 @@ where
 
                 if let Err(err) = process.terminate() {
                     tracing::error!("Error while terminating process: {}. Thread closing.", err);
-                    return;
                 }
+
+                break;
             }
         }
 
         tracing::debug!("Thread closing gracefully.")
     });
 
-    Ok(MonitorProcessJoin {
-        id,
-        monitor_join,
-        messages_join,
-    })
+    Ok((
+        MonitorProcessJoin {
+            id,
+            monitor_join,
+            messages_join,
+        },
+        return_monitor_tx,
+    ))
 }
 
 /// Create a monitor function to be used with [run_monitor_process()] that
 /// may return an [eyre::Result], if the result is an `Err` then a
 /// panic will occur and the ceremony will shut down with a
 /// [CeremonyMessage::Shutdown].
-pub fn fallible_monitor<M>(fallible_monitor: M) -> impl Fn(File, Sender<CeremonyMessage>)
+pub fn fallible_monitor<M>(
+    fallible_monitor: M,
+) -> impl Fn(File, Sender<CeremonyMessage>, Sender<MonitorProcessMessage>)
 where
-    M: Fn(File, Sender<CeremonyMessage>) -> eyre::Result<()> + Send + Sync + 'static,
+    M: Fn(File, Sender<CeremonyMessage>, Sender<MonitorProcessMessage>) -> eyre::Result<()>
+        + Send
+        + Sync
+        + 'static,
 {
-    move |stdout: File, coordinator_tx: Sender<CeremonyMessage>| {
-        if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone()) {
+    move |stdout: File,
+          coordinator_tx: Sender<CeremonyMessage>,
+          monitor_tx: Sender<MonitorProcessMessage>| {
+        if let Err(error) = fallible_monitor(stdout, coordinator_tx.clone(), monitor_tx) {
             // tell the other threads to shut down
             let _ = coordinator_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error));
             // TODO: change this into something that records the fatal message, and requests a shutdown.

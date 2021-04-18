@@ -75,6 +75,9 @@ struct SingleTestOptions {
     #[serde(default = "skip_default")]
     pub skip: bool,
 
+    /// Configure expected contributor drops. A contributor is
+    /// assigned automatically to each specified config. The number of
+    /// configs should not exceed the number of contributors.
     #[serde(default)]
     pub contributor_drops: Vec<DropContributorConfig>,
 }

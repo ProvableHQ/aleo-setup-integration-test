@@ -12,7 +12,7 @@ use crate::{
     git::clone_git_repository,
     npm::npm_install,
     options::CmdOptions,
-    process::{join_multiple, MonitorProcessJoin},
+    process::{join_multiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, setup_state_monitor},
@@ -115,7 +115,7 @@ const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator
 
 /// The directory that the `aleo-setup-coordinator` repository is
 /// cloned to.
-const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
+const COORDINATOR_DIR: &str = "../aleo-setup-coordinator";
 
 /// The url for the `aleo-setup-status-monitor` git repository.
 const STATE_MONITOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-state-monitor.git";
@@ -128,7 +128,7 @@ const STATE_MONITOR_DIR: &str = "aleo-setup-state-monitor";
 const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
 
 /// The directory that the `aleo-setup` repository is cloned to.
-const SETUP_DIR: &str = "aleo-setup";
+const SETUP_DIR: &str = "../aleo-setup";
 
 /// URL used by the contributors and verifiers to connect to the
 /// coordinator.
@@ -228,15 +228,19 @@ pub fn run_integration_test(
         }
     }
 
+    // Create the log file, and write out the options that were used to run this test.
     create_dir_if_not_exists(&options.out_dir)?;
     log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
-
     let test_config_path = options.out_dir.join("test_config.json");
     std::fs::write(test_config_path, serde_json::to_string_pretty(&options)?)?;
 
+    // Directory to store the contributor and verifier keys.
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
+
+    // Unfortunately aleo-setup still requires an old version of nightly to compile.
     let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
 
+    // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(&options)?;
 
     if !options.no_prereqs {
@@ -338,7 +342,7 @@ pub fn run_integration_test(
         .iter()
         .enumerate()
         .map(|(i, drop_config)| {
-            let contributor: ContributorRef = contributors
+            let contributor_ref: ContributorRef = contributors
                 .get(i)
                 .ok_or_else(|| {
                     eyre::eyre!(
@@ -347,15 +351,18 @@ pub fn run_integration_test(
                     )
                 })?
                 .as_contributor_ref();
-            Ok((contributor, drop_config.clone()))
+            Ok((contributor_ref, drop_config.clone()))
         })
         .collect::<eyre::Result<HashMap<ContributorRef, DropContributorConfig>>>()?;
 
-    let drops_config = MonitorDropsConfig { contributor_drops };
-
+    // Monitor the ceremony for dropped participants
+    let drops_config = MonitorDropsConfig {
+        contributor_drops: contributor_drops.clone(),
+    };
     let monitor_drops_join = monitor_drops(drops_config, ceremony_rx.clone(), ceremony_tx.clone());
 
-    // Watches the bus to determine when the coordinator and coordinator proxy are ready.
+    // Construct MessageWaiters which wait for specific messages
+    // during the ceremony before joining.
     let coordinator_ready = MessageWaiter::spawn(
         vec![
             CeremonyMessage::RoundWaitingForParticipants(1),
@@ -364,32 +371,28 @@ pub fn run_integration_test(
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-
     let round1_started = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundStarted(1)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-
     let round1_aggregation_started = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundStartedAggregation(1)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-
     let round1_finished = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundFinished(1)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-
     let round1_aggregated = MessageWaiter::spawn(
         vec![CeremonyMessage::RoundAggregated(1)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
-    let mut process_joins: Vec<MonitorProcessJoin> = Vec::new();
+    let mut process_joins: Vec<Box<dyn MultiJoinable>> = Vec::new();
 
     // Run the nodejs proxy server for the coordinator.
     let coordinator_proxy_out_dir =
@@ -400,7 +403,7 @@ pub fn run_integration_test(
         ceremony_rx.clone(),
         coordinator_proxy_out_dir,
     )?;
-    process_joins.push(coordinator_proxy_join);
+    process_joins.push(Box::new(coordinator_proxy_join));
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
@@ -409,7 +412,7 @@ pub fn run_integration_test(
         ceremony_rx.clone(),
     )?;
 
-    process_joins.push(coordinator_join);
+    process_joins.push(Box::new(coordinator_join));
 
     if options.state_monitor {
         let state_monitor_join = run_state_monitor(
@@ -419,7 +422,7 @@ pub fn run_integration_test(
             ceremony_rx.clone(),
             &options.out_dir,
         )?;
-        process_joins.push(state_monitor_join);
+        process_joins.push(Box::new(state_monitor_join));
     }
 
     // Wait for the coordinator and coordinator proxy to start.
@@ -432,18 +435,23 @@ pub fn run_integration_test(
     for contributor in &contributors {
         // Run the `setup1-contributor`.
         let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
+        let drop = contributor_drops
+            .get(&contributor.as_contributor_ref())
+            .cloned();
         let contributor_config = ContributorConfig {
             id: contributor.id.clone(),
+            contributor_ref: contributor.as_contributor_ref(),
             contributor_bin_path: contributor_bin_path.clone(),
             key_file_path: contributor.key_file.clone(),
             environment: options.environment,
             coordinator_api_url: COORDINATOR_API_URL.to_string(),
             out_dir: contributor_out_dir,
+            drop,
         };
 
         let contributor_join =
             run_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
-        process_joins.push(contributor_join);
+        process_joins.push(Box::new(contributor_join));
     }
 
     for verifier in &verifiers {
@@ -460,7 +468,7 @@ pub fn run_integration_test(
             ceremony_rx.clone(),
             verifier_out_dir,
         )?;
-        process_joins.push(verifier_join);
+        process_joins.push(Box::new(verifier_join));
     }
 
     let mut round_errors: Vec<eyre::Error> = Vec::new();
