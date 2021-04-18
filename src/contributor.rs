@@ -7,7 +7,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     process::{MonitorProcessMessage, MultiJoinable},
-    CeremonyMessage, ContributorRef, Environment,
+    AleoPublicKey, CeremonyMessage, ContributorRef, Environment,
 };
 
 use eyre::Context;
@@ -25,7 +25,7 @@ pub struct ContributorKey {
     #[serde(rename = "encryptedSeed")]
     pub encrypted_seed: String,
     /// Aleo address
-    pub address: String,
+    pub address: AleoPublicKey,
 }
 
 /// Use `setup1-contributor` to generate the contributor key file used
@@ -57,8 +57,7 @@ pub struct Contributor {
     pub id: String,
     pub key_file: PathBuf,
     /// Aleo address
-    /// e.g. `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
-    pub address: String,
+    pub address: AleoPublicKey,
 }
 
 impl Contributor {
@@ -104,20 +103,28 @@ pub struct ContributorConfig {
     pub drop: Option<DropContributorConfig>,
 }
 
+/// Allows the threads created by [run_contributor()] to be joined.
 #[derive(Debug)]
 pub struct ContributorJoin {
     monitor_join: MonitorProcessJoin,
     drop_join: Option<std::thread::JoinHandle<()>>,
 }
 
-impl MultiJoinable for ContributorJoin {
-    fn join(self: Box<Self>) -> std::thread::Result<()> {
+impl ContributorJoin {
+    /// Joins the threads created by [run_contributor()].
+    fn join(self) -> std::thread::Result<()> {
         self.monitor_join.join()?;
         if let Some(join) = self.drop_join {
             join.join()
         } else {
             Ok(())
         }
+    }
+}
+
+impl MultiJoinable for ContributorJoin {
+    fn join(self: Box<Self>) -> std::thread::Result<()> {
+        ContributorJoin::join(*self)
     }
 }
 

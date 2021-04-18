@@ -11,7 +11,7 @@ use std::{
 use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use subprocess::Exec;
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     verifier::Verifier,
-    CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef,
+    AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef,
 };
 
 /// Copy the `Rocket.toml` config file from the
@@ -33,6 +33,18 @@ pub fn deploy_coordinator_rocket_config(config: &CoordinatorConfig) -> eyre::Res
     std::fs::copy(config_path, config_deploy_path)
         .wrap_err("Error while deploying coordinator Rocket.toml config file")
         .map(|_| ())
+}
+
+/// The format of the configuration json configuration file, used with
+/// the `--config` command line option for `aleo-setup-coordinator`.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoordinatorJsonConfiguration {
+    /// The public keys e.g.
+    /// `aleo1hsr8czcmxxanpv6cvwct75wep5ldhd2s702zm8la47dwcxjveypqsv7689`
+    /// of contributors which will act as replacements for regular
+    /// contributors which get dropped during a round.
+    replacement_contributors: Vec<AleoPublicKey>,
 }
 
 /// Configuration for the [run_coordinator()] function to run
@@ -146,7 +158,7 @@ impl CoordinatorStateReporter {
     /// (and broadcast this fact with [CeremonyMessage::ParticipantDropped]).
     fn check_participant_dropped(&mut self, line: &str) -> eyre::Result<()> {
         if let Some(captures) = DROPPED_PARTICIPANT_RE.captures(line) {
-            let address = captures
+            let address_str = captures
                 .name("address")
                 .expect("expected address group to be captured")
                 .as_str()
@@ -155,6 +167,8 @@ impl CoordinatorStateReporter {
                 .name("participant_type")
                 .expect("expected participant_type group to be captured")
                 .as_str();
+
+            let address = AleoPublicKey::from_str(&address_str)?;
 
             let participant = match participant_type_s {
                 "contributor" => ParticipantRef::Contributor(ContributorRef { address }),
@@ -203,7 +217,7 @@ impl CoordinatorStateReporter {
                 }
 
                 if let Some(captures) = SUCCESSFUL_CONTRIBUTION_RE.captures(line) {
-                    let address = captures
+                    let address_str = captures
                         .name("address")
                         .expect("expected address group to be captured")
                         .as_str()
@@ -215,6 +229,8 @@ impl CoordinatorStateReporter {
                             .expect("exprected chunk address to be captured")
                             .as_str(),
                     )?;
+
+                    let address = AleoPublicKey::from_str(&address_str)?;
 
                     tracing::info!(
                         "Contributor {} made a successful contribution to chunk {}.",

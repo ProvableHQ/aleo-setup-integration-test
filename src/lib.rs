@@ -23,9 +23,8 @@ pub mod verifier;
 /// A reference to a contributor in the ceremony.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ContributorRef {
-    /// Public aleo address e.g.
-    /// `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
-    pub address: String,
+    /// Public aleo address
+    pub address: AleoPublicKey,
 }
 
 impl std::fmt::Display for ContributorRef {
@@ -37,9 +36,8 @@ impl std::fmt::Display for ContributorRef {
 /// A reference to a verifier in the ceremony.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VerifierRef {
-    /// Public aleo address e.g.
-    /// `aleo18whcjapew3smcwnj9lzk29vdhpthzank269vd2ne24k0l9dduqpqfjqlda`
-    pub address: String,
+    /// Public aleo address
+    pub address: AleoPublicKey,
 }
 
 /// A reference to a participant in the ceremony.
@@ -233,5 +231,45 @@ where
             Ok(Err(run_error)) => Err(run_error),
             Ok(Ok(join_condition)) => Ok(join_condition),
         }
+    }
+}
+
+/// An aleo public key e.g.
+/// `aleo1hsr8czcmxxanpv6cvwct75wep5ldhd2s702zm8la47dwcxjveypqsv7689`
+///
+/// TODO: implement deserialize myself to include the FromStr
+/// implementation's validation.
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct AleoPublicKey(String);
+
+impl std::str::FromStr for AleoPublicKey {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != 63 {
+            return Err(eyre::eyre!(
+                "String is not the required 63 characters in length: {:?}",
+                s
+            ));
+        }
+
+        let (key_type, _key) = s.split_at(4);
+        if key_type != "aleo" {
+            return Err(eyre::eyre!("Key is not an `aleo` type key {:?}", s));
+        }
+
+        Ok(AleoPublicKey(s.to_string()))
+    }
+}
+
+impl Display for AleoPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for AleoPublicKey {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
