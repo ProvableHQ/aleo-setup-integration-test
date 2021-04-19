@@ -1,0 +1,9 @@
+{
+    "files.watcherExclude": {
+        "**/aleo-setup-coordinator/**": true,
+        "**/aleo-setup-state-monitor/**": true,
+        "**/aleo-setup/**": true,
+        "**/out/**": true,
+        "**/target/**": true
+    }
+}

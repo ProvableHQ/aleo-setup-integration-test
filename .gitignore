@@ -1,0 +1,13 @@
+# Rust build directory
+/target
+
+# Integration test checked out repositories
+aleo-setup/
+aleo-setup-coordinator/
+aleo-setup-state-monitor/
+
+# Cooridinator ceremony transcript
+transcript/
+
+# Ceremony output
+out/
