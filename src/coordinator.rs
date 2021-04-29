@@ -102,7 +102,7 @@ pub fn run_coordinator(
     let _guard = span.enter();
 
     let json_config = CoordinatorJsonConfiguration::from(config);
-    let json_config_str = serde_json::to_string(&json_config)
+    let json_config_str = serde_json::to_string_pretty(&json_config)
         .wrap_err("Error while serializing coordinator json config")?;
     let json_config_path = config.out_dir.join("config.json");
     std::fs::write(&json_config_path, &json_config_str)
@@ -261,7 +261,7 @@ impl CoordinatorStateReporter {
 
                     let address = AleoPublicKey::from_str(&address_str)?;
 
-                    tracing::info!(
+                    tracing::debug!(
                         "Contributor {} made a successful contribution to chunk {}.",
                         &address,
                         &chunk
