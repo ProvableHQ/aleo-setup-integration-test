@@ -9,7 +9,7 @@ use crate::{
     },
     coordinator_proxy::run_coordinator_proxy,
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
-    git::clone_git_repository,
+    git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
     npm::npm_install,
     options::CmdOptions,
     process::{join_multiple, MultiJoinable},
@@ -26,7 +26,7 @@ use crate::{
 use eyre::Context;
 use humantime::format_duration;
 use mpmc_bus::Bus;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use std::{
     collections::HashMap,
@@ -34,8 +34,53 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    str::FromStr,
 };
+
+/// Code repository to be used during a test.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum Repo {
+    /// A local git repository, already present on the file system.
+    Local(LocalGitRepo),
+    /// A remote git repository to be cloned.
+    Remote(RemoteGitRepo),
+}
+
+impl Repo {
+    pub fn dir(&self) -> &Path {
+        match self {
+            Repo::Local(repo) => &repo.dir,
+            Repo::Remote(repo) => &repo.dir,
+        }
+    }
+}
+
+/// Default repository specification for the `aleo-setup` project.
+pub fn default_aleo_setup() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup".into(),
+        url: "git@github.com:AleoHQ/aleo-setup.git".into(),
+        branch: "master".into(),
+    })
+}
+
+/// Default repository specification for the `aleo-setup-coordinator` project.
+pub fn default_aleo_setup_coordinator() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup-coordinator".into(),
+        url: "git@github.com:AleoHQ/aleo-setup-coordinator.git".into(),
+        branch: "main".into(),
+    })
+}
+
+/// Default repository specification for the `aleo-setup-state-monitor` project.
+pub fn default_aleo_setup_state_monitor() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup-state-monitor".into(),
+        url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git".into(),
+        branch: "include-build".into(), // branch to include build files so that npm is not required
+    })
+}
 
 /// Command line options for running the Aleo Setup integration test.
 #[derive(Debug, Serialize)]
@@ -82,6 +127,15 @@ pub struct TestOptions {
 
     /// Configuration for dropping contributors during the ceremony.
     pub contributor_drops: Vec<DropContributorConfig>,
+
+    /// The code repository for the `aleo-setup` project.
+    pub aleo_setup_repo: Repo,
+
+    /// The code repository for the `aleo-setup-coordinator` project.
+    pub aleo_setup_coordinator_repo: Repo,
+
+    /// The code repository for the `aleo-setup-state-monitor` project.
+    pub aleo_setup_state_monitor_repo: Repo,
 }
 
 impl TryFrom<&CmdOptions> for TestOptions {
@@ -100,6 +154,21 @@ impl TryFrom<&CmdOptions> for TestOptions {
             state_monitor: options.state_monitor,
             round_timout: options.round_timeout,
             contributor_drops: Vec::new(),
+            aleo_setup_repo: options
+                .aleo_setup_repo
+                .clone()
+                .map(|dir| Repo::Local(LocalGitRepo { dir }))
+                .unwrap_or_else(default_aleo_setup),
+            aleo_setup_coordinator_repo: options
+                .aleo_setup_coordinator_repo
+                .clone()
+                .map(|dir| Repo::Local(LocalGitRepo { dir }))
+                .unwrap_or_else(default_aleo_setup_coordinator),
+            aleo_setup_state_monitor_repo: options
+                .aleo_setup_state_monitor_repo
+                .clone()
+                .map(|dir| Repo::Local(LocalGitRepo { dir }))
+                .unwrap_or_else(default_aleo_setup_state_monitor),
         })
     }
 }
@@ -115,40 +184,26 @@ pub struct TestResults {
     pub aggregation_duration: std::time::Duration,
 }
 
-/// The url for the `aleo-setup-coordinator` git repository.
-const COORDINATOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-coordinator.git";
-
-/// The directory that the `aleo-setup-coordinator` repository is
-/// cloned to.
-const COORDINATOR_DIR: &str = "aleo-setup-coordinator";
-
-/// The url for the `aleo-setup-status-monitor` git repository.
-const STATE_MONITOR_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup-state-monitor.git";
-
-/// The directory that the `aleo-setup-state-monitor` repository is
-/// cloned to.
-const STATE_MONITOR_DIR: &str = "aleo-setup-state-monitor";
-
-/// The url for the `aleo-setup` git repository.
-const SETUP_REPO_URL: &str = "git@github.com:AleoHQ/aleo-setup.git";
-
-/// The directory that the `aleo-setup` repository is cloned to.
-const SETUP_DIR: &str = "aleo-setup";
-
 /// URL used by the contributors and verifiers to connect to the
 /// coordinator.
 const COORDINATOR_API_URL: &str = "http://localhost:9000";
 
 /// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
 pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
-    clone_git_repository(COORDINATOR_REPO_URL, COORDINATOR_DIR, "update-aleo-setup")
-        .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
-    clone_git_repository(SETUP_REPO_URL, SETUP_DIR, "master")
-        .wrap_err("Error while cloning the `aleo-setup` git repository.")?;
+    if let Repo::Remote(repo) = &options.aleo_setup_coordinator_repo {
+        clone_git_repository(repo)
+            .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
+    }
+
+    if let Repo::Remote(repo) = &options.aleo_setup_repo {
+        clone_git_repository(repo).wrap_err("Error while cloning `aleo-setup` git repository.")?;
+    }
 
     if options.state_monitor {
-        clone_git_repository(STATE_MONITOR_REPO_URL, STATE_MONITOR_DIR, "include-build")
-            .wrap_err("Error while cloning `aleo-setup-state-monitor` git repository.")?;
+        if let Repo::Remote(repo) = &options.aleo_setup_state_monitor_repo {
+            clone_git_repository(repo)
+                .wrap_err("Error while cloning `aleo-setup-state-monitor` git repository.")?;
+        }
     }
 
     Ok(())
@@ -216,19 +271,21 @@ pub fn run_integration_test(
         }
 
         if !options.keep_repos {
-            let setup_dir_path = Path::new(SETUP_DIR);
-            if setup_dir_path.exists() {
-                tracing::info!("Removing `aleo-setup` repository: {:?}.", setup_dir_path);
-                std::fs::remove_dir_all(setup_dir_path)?;
+            if let Repo::Remote(repo) = &options.aleo_setup_repo {
+                if repo.dir.exists() {
+                    tracing::info!("Removing `aleo-setup` repository: {:?}.", &repo.dir);
+                    std::fs::remove_dir_all(&repo.dir)?;
+                }
             }
 
-            let coordinator_dir_path = Path::new(COORDINATOR_DIR);
-            if coordinator_dir_path.exists() {
-                tracing::info!(
-                    "Removing `aleo-setup-coordinator` repository: {:?}.",
-                    coordinator_dir_path
-                );
-                std::fs::remove_dir_all(coordinator_dir_path)?;
+            if let Repo::Remote(repo) = &options.aleo_setup_coordinator_repo {
+                if repo.dir.exists() {
+                    tracing::info!(
+                        "Removing `aleo-setup-coordinator` repository: {:?}.",
+                        &repo.dir
+                    );
+                    std::fs::remove_dir_all(&repo.dir)?;
+                }
             }
         }
     }
@@ -248,44 +305,39 @@ pub fn run_integration_test(
     // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(&options)?;
 
+    let coordinator_dir = options.aleo_setup_coordinator_repo.dir();
+    let state_monitor_dir = options.aleo_setup_state_monitor_repo.dir();
+    let setup_dir = options.aleo_setup_repo.dir();
+
     if !options.no_prereqs {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
         install_rust_toolchain(&rust_1_47_nightly)?;
         // Install the dependencies for the setup coordinator nodejs proxy.
-        npm_install(COORDINATOR_DIR)?;
+        npm_install(coordinator_dir)?;
         if options.state_monitor {
-            setup_state_monitor(STATE_MONITOR_DIR)?;
+            setup_state_monitor(state_monitor_dir)?;
         }
     }
 
     // Build the setup coordinator Rust project.
-    build_rust_crate(COORDINATOR_DIR, &rust_1_47_nightly)?;
-    let coordinator_bin_path = Path::new(COORDINATOR_DIR)
+    build_rust_crate(coordinator_dir, &rust_1_47_nightly)?;
+    let coordinator_bin_path = Path::new(coordinator_dir)
         .join("target/release")
         .join("aleo-setup-coordinator");
 
     // Build the setup1-contributor Rust project.
-    build_rust_crate(
-        Path::new(SETUP_DIR).join("setup1-contributor"),
-        &rust_1_47_nightly,
-    )?;
+    build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_47_nightly)?;
 
     // Build the setup1-verifier Rust project.
-    build_rust_crate(
-        Path::new(SETUP_DIR).join("setup1-verifier"),
-        &rust_1_47_nightly,
-    )?;
+    build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_47_nightly)?;
 
     // Build the setup1-cli-tools Rust project.
-    build_rust_crate(
-        Path::new(SETUP_DIR).join("setup1-cli-tools"),
-        &rust_1_47_nightly,
-    )?;
+    build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_47_nightly)?;
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
-    let setup_build_output_dir = Path::new(SETUP_DIR).join("target/release");
+    let setup_build_output_dir = setup_dir.join("target/release");
 
     let view_key_bin_path = setup_build_output_dir.join("view-key");
 
@@ -346,7 +398,7 @@ pub fn run_integration_test(
         .collect();
 
     let coordinator_config = CoordinatorConfig {
-        crate_dir: PathBuf::from_str(COORDINATOR_DIR)?,
+        crate_dir: coordinator_dir.to_owned(),
         setup_coordinator_bin: coordinator_bin_path,
         environment: options.environment,
         out_dir: create_dir_if_not_exists(options.out_dir.join("coordinator"))?,
@@ -432,7 +484,7 @@ pub fn run_integration_test(
     let coordinator_proxy_out_dir =
         create_dir_if_not_exists(options.out_dir.join("coordinator_proxy"))?;
     let coordinator_proxy_join = run_coordinator_proxy(
-        COORDINATOR_DIR,
+        coordinator_dir,
         ceremony_tx.clone(),
         ceremony_rx.clone(),
         coordinator_proxy_out_dir,
@@ -450,7 +502,7 @@ pub fn run_integration_test(
 
     if options.state_monitor {
         let state_monitor_join = run_state_monitor(
-            STATE_MONITOR_DIR,
+            state_monitor_dir,
             &coordinator_config.transcript_dir(),
             ceremony_tx.clone(),
             ceremony_rx.clone(),

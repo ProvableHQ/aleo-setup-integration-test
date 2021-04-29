@@ -69,6 +69,18 @@ pub struct CmdOptions {
     #[structopt(long, short = "t", parse(try_from_str = parse_round_timout))]
     pub round_timeout: Option<std::time::Duration>,
 
+    /// Specify a local repository for the `aleo-setup` project.
+    #[structopt(long)]
+    pub aleo_setup_repo: Option<PathBuf>,
+
+    /// Specify a local repository for the `aleo-setup-coordinator` project.
+    #[structopt(long)]
+    pub aleo_setup_coordinator_repo: Option<PathBuf>,
+
+    /// Specify a local repository for the `aleo-setup-state-monitor` project.
+    #[structopt(long)]
+    pub aleo_setup_state_monitor_repo: Option<PathBuf>,
+
     #[structopt(subcommand)]
     pub cmd: Option<Command>,
 }

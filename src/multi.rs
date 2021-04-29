@@ -13,7 +13,10 @@ use serde::Deserialize;
 use crate::{
     drop_participant::DropContributorConfig,
     reporting::LogFileWriter,
-    test::{run_integration_test, TestOptions},
+    test::{
+        default_aleo_setup, default_aleo_setup_coordinator, default_aleo_setup_state_monitor,
+        run_integration_test, Repo, TestOptions,
+    },
     util::create_dir_if_not_exists,
     Environment,
 };
@@ -84,6 +87,18 @@ struct SingleTestOptions {
     /// configs should not exceed the number of contributors.
     #[serde(default)]
     pub contributor_drops: Vec<DropContributorConfig>,
+
+    /// The code repository for the `aleo-setup` project.
+    #[serde(default = "default_aleo_setup")]
+    pub aleo_setup_repo: Repo,
+
+    /// The code repository for the `aleo-setup-coordinator` project.
+    #[serde(default = "default_aleo_setup_coordinator")]
+    pub aleo_setup_coordinator_repo: Repo,
+
+    /// The code repository for the `aleo-setup-state-monitor` project.
+    #[serde(default = "default_aleo_setup_state_monitor")]
+    pub aleo_setup_state_monitor_repo: Repo,
 }
 
 /// Default value for [TestOptions::replacement_contributors].
@@ -158,6 +173,9 @@ pub fn run_multi_test(
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
                     contributor_drops: options.contributor_drops.clone(),
+                    aleo_setup_repo: options.aleo_setup_repo.clone(),
+                    aleo_setup_coordinator_repo: options.aleo_setup_coordinator_repo.clone(),
+                    aleo_setup_state_monitor_repo: options.aleo_setup_state_monitor_repo.clone(),
                 }
             } else {
                 TestOptions {
@@ -172,6 +190,9 @@ pub fn run_multi_test(
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
                     contributor_drops: options.contributor_drops.clone(),
+                    aleo_setup_repo: options.aleo_setup_repo.clone(),
+                    aleo_setup_coordinator_repo: options.aleo_setup_coordinator_repo.clone(),
+                    aleo_setup_state_monitor_repo: options.aleo_setup_state_monitor_repo.clone(),
                 }
             };
 
