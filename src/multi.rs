@@ -24,6 +24,7 @@ use crate::{
 /// Specification for multiple tests to be performed. Will be
 /// deserialized from a json file.
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct Specification {
     /// Remove any artifacts created during a previous integration
     /// test run before starting.
@@ -48,6 +49,42 @@ struct Specification {
     /// Path to where the log files, key files and transcripts are stored.
     pub out_dir: PathBuf,
 
+    /// The code repository for the `aleo-setup` project.
+    ///
+    /// Example [Repo::Remote] specification:
+    ///
+    /// ```json
+    /// "aleo_setup_repo": {
+    ///   "type": "Remote",
+    ///   "dir": "aleo-setup",
+    ///   "url": "git@github.com:AleoHQ/aleo-setup.git",
+    ///   "branch": "master"
+    /// },
+    /// ```
+    ///
+    /// Example [Repo::Local] specification:
+    ///
+    /// ```json
+    /// "aleo_setup_repo": {
+    ///   "type": "Local",
+    ///   "dir": "../aleo-setup",
+    /// },
+    /// ```
+    #[serde(default = "default_aleo_setup")]
+    pub aleo_setup_repo: Repo,
+
+    /// The code repository for the `aleo-setup-coordinator` project.
+    ///
+    /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
+    #[serde(default = "default_aleo_setup_coordinator")]
+    pub aleo_setup_coordinator_repo: Repo,
+
+    /// The code repository for the `aleo-setup-state-monitor` project.
+    ///
+    /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
+    #[serde(default = "default_aleo_setup_state_monitor")]
+    pub aleo_setup_state_monitor_repo: Repo,
+
     /// Specifications for the individual tests.
     pub tests: Vec<SingleTestOptions>,
 }
@@ -55,6 +92,7 @@ struct Specification {
 /// Options for each individual test in the [Specification]'s `tests`
 /// field.
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct SingleTestOptions {
     /// Id for the individual test.
     pub id: String,
@@ -87,18 +125,6 @@ struct SingleTestOptions {
     /// configs should not exceed the number of contributors.
     #[serde(default)]
     pub contributor_drops: Vec<DropContributorConfig>,
-
-    /// The code repository for the `aleo-setup` project.
-    #[serde(default = "default_aleo_setup")]
-    pub aleo_setup_repo: Repo,
-
-    /// The code repository for the `aleo-setup-coordinator` project.
-    #[serde(default = "default_aleo_setup_coordinator")]
-    pub aleo_setup_coordinator_repo: Repo,
-
-    /// The code repository for the `aleo-setup-state-monitor` project.
-    #[serde(default = "default_aleo_setup_state_monitor")]
-    pub aleo_setup_state_monitor_repo: Repo,
 }
 
 /// Default value for [TestOptions::replacement_contributors].
@@ -157,6 +183,8 @@ pub fn run_multi_test(
             let test_id = &options.id;
             let out_dir = out_dir.join(test_id);
 
+            dbg!(&options);
+
             // The first test uses the keep_repos and no_prereqs
             // option. Subsequent tests do not clean, and do not
             // attempt to install prerequisites.
@@ -173,9 +201,11 @@ pub fn run_multi_test(
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
                     contributor_drops: options.contributor_drops.clone(),
-                    aleo_setup_repo: options.aleo_setup_repo.clone(),
-                    aleo_setup_coordinator_repo: options.aleo_setup_coordinator_repo.clone(),
-                    aleo_setup_state_monitor_repo: options.aleo_setup_state_monitor_repo.clone(),
+                    aleo_setup_repo: specification.aleo_setup_repo.clone(),
+                    aleo_setup_coordinator_repo: specification.aleo_setup_coordinator_repo.clone(),
+                    aleo_setup_state_monitor_repo: specification
+                        .aleo_setup_state_monitor_repo
+                        .clone(),
                 }
             } else {
                 TestOptions {
@@ -190,9 +220,11 @@ pub fn run_multi_test(
                     state_monitor: specification.state_monitor,
                     round_timout: options.round_timout.map(Duration::from_secs),
                     contributor_drops: options.contributor_drops.clone(),
-                    aleo_setup_repo: options.aleo_setup_repo.clone(),
-                    aleo_setup_coordinator_repo: options.aleo_setup_coordinator_repo.clone(),
-                    aleo_setup_state_monitor_repo: options.aleo_setup_state_monitor_repo.clone(),
+                    aleo_setup_repo: specification.aleo_setup_repo.clone(),
+                    aleo_setup_coordinator_repo: specification.aleo_setup_coordinator_repo.clone(),
+                    aleo_setup_state_monitor_repo: specification
+                        .aleo_setup_state_monitor_repo
+                        .clone(),
                 }
             };
 
