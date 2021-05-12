@@ -3,10 +3,7 @@
 
 use crate::{
     contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
-    coordinator::{
-        check_participants_in_round, deploy_coordinator_rocket_config, run_coordinator,
-        CoordinatorConfig,
-    },
+    coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     coordinator_proxy::run_coordinator_proxy,
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
@@ -404,8 +401,6 @@ pub fn run_integration_test(
         out_dir: create_dir_if_not_exists(options.out_dir.join("coordinator"))?,
         replacement_contributors: replacement_contributor_refs,
     };
-
-    deploy_coordinator_rocket_config(&coordinator_config)?;
 
     write_tail_logs_script(
         &options.out_dir,

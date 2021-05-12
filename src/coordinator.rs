@@ -23,18 +23,6 @@ use crate::{
     AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef,
 };
 
-/// Copy the `Rocket.toml` config file from the
-/// `aleo-setup-cooridinator` repository to the out dir, which is the
-/// current working directory while running the coordinator.
-pub fn deploy_coordinator_rocket_config(config: &CoordinatorConfig) -> eyre::Result<()> {
-    let config_path = config.crate_dir.join("Rocket.toml");
-    let config_deploy_path = config.out_dir.join("Rocket.toml");
-
-    std::fs::copy(config_path, config_deploy_path)
-        .wrap_err("Error while deploying coordinator Rocket.toml config file")
-        .map(|_| ())
-}
-
 /// The format of the configuration json configuration file, used with
 /// the `--config` command line option for `aleo-setup-coordinator`.
 #[derive(Debug, Default, Serialize)]
@@ -45,6 +33,16 @@ struct CoordinatorJsonConfiguration {
     /// of contributors which will act as replacements for regular
     /// contributors which get dropped during a round.
     replacement_contributors: Vec<AleoPublicKey>,
+
+    /// The option to define if we are checking the reliability
+    /// score of the contributors or not. Defaults to false
+    check_reliability: bool,
+
+    /// Defines the threshold at which we let the contributors to
+    /// join the queue. For example if the threshold is 8 and
+    /// the reliability is 8 or above, then the contributor is allowed
+    /// to join the queue.
+    reliability_threshold: u8,
 }
 
 impl From<&CoordinatorConfig> for CoordinatorJsonConfiguration {
@@ -57,6 +55,9 @@ impl From<&CoordinatorConfig> for CoordinatorJsonConfiguration {
 
         Self {
             replacement_contributors,
+            // TODO: update this when reliability checks are implemented.
+            check_reliability: false,
+            reliability_threshold: 8,
         }
     }
 }
@@ -164,7 +165,7 @@ struct CoordinatorStateReporter {
 }
 
 lazy_static::lazy_static! {
-    static ref ROCKET_LAUNCH_RE: Regex = Regex::new("Rocket has launched.*").unwrap();
+    static ref WARP_LAUNCH_RE: Regex = Regex::new(".*warp::server: listening on.*").unwrap();
     static ref ROUND1_STARTED_RE: Regex = Regex::new(".*Advanced ceremony to round 1.*").unwrap();
     static ref ROUND1_STARTED_AGGREGATION_RE: Regex = Regex::new(".*Starting aggregation on round 1").unwrap();
     static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
@@ -223,7 +224,7 @@ impl CoordinatorStateReporter {
     fn parse_output_line(&mut self, line: &str) -> eyre::Result<()> {
         match self.current_state {
             CoordinatorState::ProcessStarted => {
-                if ROCKET_LAUNCH_RE.is_match(&line) {
+                if WARP_LAUNCH_RE.is_match(&line) {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundWaitingForParticipants(1))?;
                     self.current_state = CoordinatorState::RoundWaitingForParticipants(1);
