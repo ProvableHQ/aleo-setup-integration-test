@@ -113,6 +113,12 @@ pub enum Environment {
     Universal,
 }
 
+impl Default for Environment {
+    fn default() -> Self {
+        Self::Development
+    }
+}
+
 impl Environment {
     /// Available variants that can be parsed with [FromStr].
     pub fn str_variants() -> &'static [&'static str] {

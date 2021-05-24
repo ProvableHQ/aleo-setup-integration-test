@@ -190,6 +190,12 @@ pub fn run_contributor(
                     } => {
                         if contributor == contributor_ref {
                             n_contributions += 1;
+                            tracing::info!(
+                                "contributor {} recieved {} out of {} contributions (before drop will occur)",
+                                contributor_id,
+                                n_contributions,
+                                drop_config.after_contributions
+                            );
                         }
                     }
                     _ => {}
@@ -239,9 +245,6 @@ fn contributor_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::R
     for line_result in buf_pipe.lines() {
         match line_result {
             Ok(line) => {
-                // Pipe the process output to tracing.
-                tracing::debug!("{}", line);
-
                 // Write to log file.
                 log_file.write(line.as_ref())?;
                 log_file.write("\n".as_ref())?;

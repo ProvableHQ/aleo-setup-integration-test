@@ -91,9 +91,6 @@ fn monitor_state_monitor(
     for line_result in buf_pipe.lines() {
         match line_result {
             Ok(line) => {
-                // Pipe the process output to tracing.
-                tracing::debug!("{}", line);
-
                 // Write to log file.
                 log_file.write(line.as_ref())?;
                 log_file.write("\n".as_ref())?;

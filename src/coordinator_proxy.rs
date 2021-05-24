@@ -85,9 +85,6 @@ fn setup_coordinator_proxy_monitor(
                     ceremony_tx.broadcast(CeremonyMessage::CoordinatorProxyReady)?;
                 }
 
-                // Pipe the process output to tracing.
-                tracing::debug!("{}", line);
-
                 // Write to log file.
                 log_file.write(line.as_ref())?;
                 log_file.write("\n".as_ref())?;

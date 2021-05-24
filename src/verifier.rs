@@ -123,9 +123,6 @@ fn verifier_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::Resu
     for line_result in buf_pipe.lines() {
         match line_result {
             Ok(line) => {
-                // Pipe the process output to tracing.
-                tracing::debug!("{}", line);
-
                 // Write to log file.
                 log_file.write(line.as_ref())?;
                 log_file.write("\n".as_ref())?;

@@ -26,8 +26,9 @@ use crate::{
 /// The format of the configuration json configuration file, used with
 /// the `--config` command line option for `aleo-setup-coordinator`.
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CoordinatorJsonConfiguration {
+struct CoordinatorTomlConfiguration {
+    /// The setup we are going to run.
+    setup: Environment,
     /// The public keys e.g.
     /// `aleo1hsr8czcmxxanpv6cvwct75wep5ldhd2s702zm8la47dwcxjveypqsv7689`
     /// of contributors which will act as replacements for regular
@@ -45,7 +46,7 @@ struct CoordinatorJsonConfiguration {
     reliability_threshold: u8,
 }
 
-impl From<&CoordinatorConfig> for CoordinatorJsonConfiguration {
+impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
     fn from(config: &CoordinatorConfig) -> Self {
         let replacement_contributors = config
             .replacement_contributors
@@ -54,6 +55,7 @@ impl From<&CoordinatorConfig> for CoordinatorJsonConfiguration {
             .collect();
 
         Self {
+            setup: config.environment,
             replacement_contributors,
             // TODO: update this when reliability checks are implemented.
             check_reliability: false,
@@ -102,11 +104,11 @@ pub fn run_coordinator(
     let span = tracing::error_span!("coordinator");
     let _guard = span.enter();
 
-    let json_config = CoordinatorJsonConfiguration::from(config);
-    let json_config_str = serde_json::to_string_pretty(&json_config)
-        .wrap_err("Error while serializing coordinator json config")?;
-    let json_config_path = config.out_dir.join("config.json");
-    std::fs::write(&json_config_path, &json_config_str)
+    let toml_config = CoordinatorTomlConfiguration::from(config);
+    let toml_config_str = toml::to_string_pretty(&toml_config)
+        .wrap_err("Error while serializing coordinator toml config")?;
+    let toml_config_path = config.out_dir.join("config.toml");
+    std::fs::write(&toml_config_path, &toml_config_str)
         .wrap_err("Error while writing corodinator config.json file")?;
 
     tracing::info!("Starting setup coordinator.");
@@ -115,12 +117,10 @@ pub fn run_coordinator(
         .cwd(&config.out_dir)
         .arg("--config")
         .arg(
-            json_config_path
+            toml_config_path
                 .canonicalize()
-                .wrap_err("cannot canonicalize json config path")?,
-        )
-        .arg("--setup")
-        .arg(config.environment.to_string());
+                .wrap_err("cannot canonicalize toml config path")?,
+        );
 
     let log_file_path = config.out_dir.join("coordinator.log");
 
@@ -325,9 +325,6 @@ fn monitor_coordinator(
         match line_result {
             Ok(line) => {
                 state_reporter.parse_output_line(&line)?;
-
-                // Pipe the process output to tracing.
-                tracing::debug!("{}", line);
 
                 // Write to log file.
                 log_file.write(line.as_ref())?;
