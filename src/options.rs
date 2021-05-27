@@ -8,7 +8,7 @@ use structopt::StructOpt;
 use crate::Environment;
 /// Command line options for running the Aleo Setup integration test.
 /// More complex options (such as drops) are available via the `multi`
-/// command interface by specifying the test in `json` format.
+/// command interface by specifying the test in `ron` format.
 #[derive(Debug, StructOpt, Serialize)]
 #[structopt(
     name = "Aleo Setup Integration Test",
@@ -92,12 +92,12 @@ fn parse_round_timout(s: &str) -> eyre::Result<std::time::Duration> {
 
 #[derive(Serialize, Debug, StructOpt)]
 pub enum Command {
-    /// Run multiple tests defined in a json file.
+    /// Run multiple tests defined in a ron file.
     Multi(MultiTestOptions),
 }
 
 #[derive(Serialize, Debug, StructOpt)]
 pub struct MultiTestOptions {
-    /// json file specifying the test options.
+    /// ron file specifying the test options.
     pub specification_file: PathBuf,
 }

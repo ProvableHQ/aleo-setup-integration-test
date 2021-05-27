@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// Specification for multiple tests to be performed. Will be
-/// deserialized from a json file.
+/// deserialized from a ron file.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct Specification {
@@ -53,22 +53,22 @@ struct Specification {
     ///
     /// Example [Repo::Remote] specification:
     ///
-    /// ```json
-    /// "aleo_setup_repo": {
-    ///   "type": "Remote",
-    ///   "dir": "aleo-setup",
-    ///   "url": "git@github.com:AleoHQ/aleo-setup.git",
-    ///   "branch": "master"
-    /// },
+    /// ```ron
+    /// aleo_setup_state_monitor_repo: (
+    ///     type: "Remote",
+    ///     dir: "aleo-setup-state-monitor",
+    ///     url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git",
+    ///     branch: "include-build",
+    /// ),
     /// ```
     ///
     /// Example [Repo::Local] specification:
     ///
-    /// ```json
-    /// "aleo_setup_repo": {
-    ///   "type": "Local",
-    ///   "dir": "../aleo-setup",
-    /// },
+    /// ```ron
+    /// aleo_setup_repo: (
+    ///     type: "Local",
+    ///     dir: "../aleo-setup",
+    /// ),
     /// ```
     #[serde(default = "default_aleo_setup")]
     pub aleo_setup_repo: Repo,
@@ -136,16 +136,16 @@ fn skip_default() -> bool {
     false
 }
 
-/// Run multiple tests specified in the json specification file.
+/// Run multiple tests specified in the ron specification file.
 pub fn run_multi_test(
     specification_file: impl AsRef<Path>,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<()> {
     let specification_string = std::fs::read_to_string(specification_file.as_ref())
-        .wrap_err_with(|| eyre::eyre!("Error while reading specification json file"))?;
+        .wrap_err_with(|| eyre::eyre!("Error while reading specification ron file"))?;
 
-    let specification: Specification = serde_json::from_str(&specification_string)
-        .wrap_err_with(|| eyre::eyre!("Error while parsing specification json file"))?;
+    let specification: Specification = ron::from_str(&specification_string)
+        .wrap_err_with(|| eyre::eyre!("Error while parsing specification ron file"))?;
 
     if specification.tests.len() == 0 {
         return Err(eyre::eyre!(
@@ -238,8 +238,9 @@ pub fn run_multi_test(
 
             run_integration_test(&options, log_writer)
                 .map(|test_results| {
-                    let test_results_str = serde_json::to_string_pretty(&test_results)
-                        .expect("Unable to serialize test results");
+                    let test_results_str =
+                        ron::ser::to_string_pretty(&test_results, Default::default())
+                            .expect("Unable to serialize test results");
                     tracing::info!("Test results: \n {}", test_results_str);
                 })
                 .wrap_err_with(|| {

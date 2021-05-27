@@ -290,8 +290,8 @@ pub fn run_integration_test(
     // Create the log file, and write out the options that were used to run this test.
     create_dir_if_not_exists(&options.out_dir)?;
     log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
-    let test_config_path = options.out_dir.join("test_config.json");
-    std::fs::write(test_config_path, serde_json::to_string_pretty(&options)?)?;
+    let test_config_path = options.out_dir.join("test_config.ron");
+    std::fs::write(test_config_path, ron::ser::to_string_pretty(&options, Default::default())?)?;
 
     // Directory to store the contributor and verifier keys.
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
@@ -665,8 +665,8 @@ pub fn run_integration_test(
     };
 
     std::fs::write(
-        options.out_dir.join("results.json"),
-        serde_json::to_string_pretty(&results)?,
+        options.out_dir.join("results.ron"),
+        ron::ser::to_string_pretty(&results, Default::default())?,
     )?;
 
     Ok(results)

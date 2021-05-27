@@ -1,0 +1,38 @@
+(
+    clean: true,
+    keep_repos: true,
+    no_prereqs: false,
+    state_monitor: true,
+    out_dir: "out",
+    aleo_setup_repo: (
+        type: "Local",
+        dir: "../aleo-setup",
+    ),
+    aleo_setup_coordinator_repo: (
+        type: "Local",
+        dir: "../aleo-setup-coordinator",
+    ),
+    aleo_setup_state_monitor_repo: (
+        type: "Local",
+        dir: "../aleo-setup-state-monitor",
+    ),
+    tests: [
+        (
+            id: "8",
+            contributors: 3,
+            verifiers: 1,
+            replacement_contributors: 2,
+            environment: development,
+            round_timout: Some(18000),
+            skip: false,
+            contributor_drops: [
+                (
+                    after_contributions: 10,
+                ),
+                (
+                    after_contributions: 11,
+                ),
+            ],
+        ),
+    ],
+)

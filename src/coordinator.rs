@@ -109,7 +109,7 @@ pub fn run_coordinator(
         .wrap_err("Error while serializing coordinator toml config")?;
     let toml_config_path = config.out_dir.join("config.toml");
     std::fs::write(&toml_config_path, &toml_config_str)
-        .wrap_err("Error while writing corodinator config.json file")?;
+        .wrap_err("Error while writing corodinator config.toml file")?;
 
     tracing::info!("Starting setup coordinator.");
 
@@ -171,7 +171,7 @@ lazy_static::lazy_static! {
     static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
     static ref ROUND1_FINISHED_RE: Regex = Regex::new(".*Round 1 is finished.*").unwrap();
     static ref DROPPED_PARTICIPANT_RE: Regex = Regex::new(".*Dropping (?P<address>aleo[a-z0-9]+)[.](?P<participant_type>contributor|verifier) from the ceremony").unwrap();
-    static ref SUCCESSFUL_CONTRIBUTION_RE: Regex = Regex::new(".*Added contribution from ((?P<address>aleo[a-z0-9]+)[.]contributor) for chunk (?P<chunk>[0-9]+)").unwrap();
+    static ref SUCCESSFUL_CONTRIBUTION_RE: Regex = Regex::new(".*((?P<address>aleo[a-z0-9]+)[.]contributor) added a contribution to chunk (?P<chunk>[0-9]+)").unwrap();
 }
 
 impl CoordinatorStateReporter {
