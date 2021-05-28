@@ -36,10 +36,15 @@ pub fn generate_contributor_key(
 ) -> eyre::Result<ContributorKey> {
     tracing::info!("Generating contributor key.");
 
+    let keys_file_path_str = key_file_path
+        .as_ref()
+        .to_str()
+        .expect("Should convert keys path to str");
+
     subprocess::Exec::cmd(contributor_bin_path.as_ref())
         .arg("generate")
-        .args(&["--passphrase", "test"]) // <COORDINATOR_API_URL>
-        .arg(key_file_path.as_ref()) // <KEYS_PATH>
+        .args(&["--passphrase", "test"])
+        .args(&["--keys-path", keys_file_path_str])
         .join()
         .map_err(eyre::Error::from)
         .and_then(default_parse_exit_status)?;
@@ -146,14 +151,20 @@ pub fn run_contributor(
 
     tracing::info!("Running contributor.");
 
+    let keys_file_path_string = config
+        .key_file_path
+        .canonicalize()?
+        .to_str()
+        .expect("Should convert keys path to str")
+        .to_owned();
+
     let exec = subprocess::Exec::cmd(&config.contributor_bin_path.canonicalize()?)
         .cwd(&config.out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
         .arg("contribute")
         .args(&["--passphrase", "test"])
-        .arg(format!("{}", &config.environment)) // <ENVIRONMENT>
-        .arg(&config.coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(config.key_file_path.canonicalize()?);
+        .args(&["--api-url", &config.coordinator_api_url]) // <COORDINATOR_API_URL>
+        .args(&["--keys-path", &keys_file_path_string]);
 
     let log_file_path = config.out_dir.join("contributor.log");
 

@@ -543,7 +543,6 @@ pub fn run_integration_test(
         let verifier_join = run_verifier(
             &verifier.id,
             verifier_bin_path,
-            options.environment,
             COORDINATOR_API_URL,
             &verifier.view_key,
             ceremony_tx.clone(),

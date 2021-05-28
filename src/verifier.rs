@@ -5,7 +5,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage, Environment,
+    CeremonyMessage,
 };
 
 use eyre::Context;
@@ -69,7 +69,6 @@ pub struct Verifier {
 pub fn run_verifier(
     id: &str,
     verifier_bin_path: impl AsRef<Path>,
-    environment: Environment,
     coordinator_api_url: &str,
     view_key: &VerifierViewKey,
     ceremony_tx: Sender<CeremonyMessage>,
@@ -85,10 +84,8 @@ pub fn run_verifier(
     let exec = subprocess::Exec::cmd(verifier_bin_path.as_ref().canonicalize()?)
         .cwd(&out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
-        .arg(format!("{}", environment)) // <ENVIRONMENT>
-        .arg(coordinator_api_url) // <COORDINATOR_API_URL>
-        .arg(view_key) // <VERIFIER_VIEW_KEY>
-        .arg("DEBUG"); // log level
+        .args(&["--api-url", &coordinator_api_url]) // <COORDINATOR_API_URL>
+        .args(&["--view-key", view_key]); // <VERIFIER_VIEW_KEY>
 
     let log_file_path = out_dir.join("verifier.log");
 
