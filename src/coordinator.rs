@@ -115,6 +115,7 @@ pub fn run_coordinator(
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
+        .env("RUST_LOG", "debug,hyper=warn")
         .arg("--config")
         .arg(
             toml_config_path
@@ -165,7 +166,7 @@ struct CoordinatorStateReporter {
 }
 
 lazy_static::lazy_static! {
-    static ref WARP_LAUNCH_RE: Regex = Regex::new(".*warp::server: listening on.*").unwrap();
+    static ref BOOTED_RE: Regex = Regex::new(".*Coordinator has booted up.*").unwrap();
     static ref ROUND1_STARTED_RE: Regex = Regex::new(".*Advanced ceremony to round 1.*").unwrap();
     static ref ROUND1_STARTED_AGGREGATION_RE: Regex = Regex::new(".*Starting aggregation on round 1").unwrap();
     static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
@@ -224,7 +225,7 @@ impl CoordinatorStateReporter {
     fn parse_output_line(&mut self, line: &str) -> eyre::Result<()> {
         match self.current_state {
             CoordinatorState::ProcessStarted => {
-                if WARP_LAUNCH_RE.is_match(&line) {
+                if BOOTED_RE.is_match(&line) {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundWaitingForParticipants(1))?;
                     self.current_state = CoordinatorState::RoundWaitingForParticipants(1);

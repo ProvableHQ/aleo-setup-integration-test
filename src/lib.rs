@@ -5,7 +5,6 @@ use std::{fmt::Display, marker::PhantomData, str::FromStr};
 
 pub mod contributor;
 pub mod coordinator;
-pub mod coordinator_proxy;
 pub mod drop_participant;
 pub mod git;
 pub mod multi;
@@ -75,9 +74,6 @@ pub enum CeremonyMessage {
     /// Notify the receivers that the coordinator is ready and waiting
     /// for participants for the specified round before starting it.
     RoundWaitingForParticipants(u64),
-    /// Notify the receivers that the cordinator nodejs proxy is ready
-    /// to start receiving requests.
-    CoordinatorProxyReady,
     /// Notify the receivers that the coordinator has just dropped a
     /// participant in the current round.
     ParticipantDropped(ParticipantRef),

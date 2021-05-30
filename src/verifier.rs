@@ -35,7 +35,8 @@ impl std::fmt::Display for VerifierViewKey {
 /// in [run_contributor()].
 pub fn generate_verifier_key(
     view_key_bin_path: impl AsRef<Path> + std::fmt::Debug,
-) -> eyre::Result<VerifierViewKey> {
+    view_key_path: impl AsRef<Path> + std::fmt::Debug,
+) -> eyre::Result<()> {
     tracing::info!("Generating verifier view key.");
 
     let capture = subprocess::Exec::cmd(view_key_bin_path.as_ref())
@@ -53,7 +54,11 @@ pub fn generate_verifier_key(
     assert!(!view_key.is_empty());
     tracing::info!("Generated view key: {}", view_key);
 
-    Ok(VerifierViewKey(view_key.to_string()))
+    let key = VerifierViewKey(view_key.to_string());
+
+    std::fs::write(view_key_path, key.as_ref()).wrap_err("error writing view key for verifier")?;
+
+    Ok(())
 }
 
 /// Data relating to a verifier.
@@ -62,7 +67,7 @@ pub struct Verifier {
     /// integration test.
     pub id: String,
     /// This verifier's view key.
-    pub view_key: VerifierViewKey,
+    pub view_key_path: PathBuf,
 }
 
 /// Run the `setup1-verifier`.
@@ -70,13 +75,14 @@ pub fn run_verifier(
     id: &str,
     verifier_bin_path: impl AsRef<Path>,
     coordinator_api_url: &str,
-    view_key: &VerifierViewKey,
+    view_key_path: impl AsRef<Path>,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
     out_dir: PathBuf,
 ) -> eyre::Result<MonitorProcessJoin> {
-    let view_key: &str = view_key.as_ref();
-    let span = tracing::error_span!("verifier", id = id, view_key = view_key);
+    let view_key_path: PathBuf = view_key_path.as_ref().canonicalize()?;
+    let view_key: String = std::fs::read_to_string(&view_key_path)?;
+    let span = tracing::error_span!("verifier", id = id, view_key = %view_key);
     let _guard = span.enter();
 
     tracing::info!("Running verifier.");
@@ -84,8 +90,9 @@ pub fn run_verifier(
     let exec = subprocess::Exec::cmd(verifier_bin_path.as_ref().canonicalize()?)
         .cwd(&out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
-        .args(&["--api-url", &coordinator_api_url]) // <COORDINATOR_API_URL>
-        .args(&["--view-key", view_key]); // <VERIFIER_VIEW_KEY>
+        .args(&["--api-url", &coordinator_api_url])
+        .arg("--view-key")
+        .arg(view_key_path);
 
     let log_file_path = out_dir.join("verifier.log");
 

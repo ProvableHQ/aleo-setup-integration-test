@@ -4,10 +4,8 @@
 use crate::{
     contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
-    coordinator_proxy::run_coordinator_proxy,
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
-    npm::npm_install,
     options::CmdOptions,
     process::{join_multiple, MultiJoinable},
     reporting::LogFileWriter,
@@ -221,7 +219,6 @@ fn write_tail_logs_script<'c>(
         "tmux new-session -s test -n \"Coordinator\" -d 'tail -f coordinator/coordinator.log'\n"
             .as_bytes(),
     )?;
-    file.write_all("tmux new-window -t test:1 -n \"Coordinator Proxy\" 'tail -f coordinator_proxy/coordinator_proxy.log'\n".as_bytes())?;
 
     let mut window_index: u8 = 2;
 
@@ -291,13 +288,16 @@ pub fn run_integration_test(
     create_dir_if_not_exists(&options.out_dir)?;
     log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
     let test_config_path = options.out_dir.join("test_config.ron");
-    std::fs::write(test_config_path, ron::ser::to_string_pretty(&options, Default::default())?)?;
+    std::fs::write(
+        test_config_path,
+        ron::ser::to_string_pretty(&options, Default::default())?,
+    )?;
 
     // Directory to store the contributor and verifier keys.
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
 
     // Unfortunately aleo-setup still requires an old version of nightly to compile.
-    let rust_1_47_nightly = RustToolchain::Specific("nightly-2020-08-15".to_string());
+    let rust_1_48 = RustToolchain::Specific("1.48".to_string());
 
     // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(&options)?;
@@ -309,28 +309,32 @@ pub fn run_integration_test(
     if !options.no_prereqs {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
-        install_rust_toolchain(&rust_1_47_nightly)?;
-        // Install the dependencies for the setup coordinator nodejs proxy.
-        npm_install(coordinator_dir)?;
+        install_rust_toolchain(&rust_1_48)
+            .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_1_48))?;
+
         if options.state_monitor {
             setup_state_monitor(state_monitor_dir)?;
         }
     }
 
     // Build the setup coordinator Rust project.
-    build_rust_crate(coordinator_dir, &rust_1_47_nightly)?;
+    build_rust_crate(coordinator_dir, &rust_1_48)
+        .wrap_err("error while building aleo-setup-coordinator crate")?;
     let coordinator_bin_path = Path::new(coordinator_dir)
         .join("target/release")
         .join("aleo-setup-coordinator");
 
     // Build the setup1-contributor Rust project.
-    build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_47_nightly)?;
+    build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_48)
+        .wrap_err("error while building setup1-contributor crate")?;
 
     // Build the setup1-verifier Rust project.
-    build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_47_nightly)?;
+    build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_48)
+        .wrap_err("error while building setup1-verifier crate")?;
 
     // Build the setup1-cli-tools Rust project.
-    build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_47_nightly)?;
+    build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_48)
+        .wrap_err("error while building setup1-verifier crate")?;
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
@@ -343,9 +347,10 @@ pub fn run_integration_test(
         .into_iter()
         .map(|i| {
             let id = format!("verifier{}", i);
-            let view_key = generate_verifier_key(&view_key_bin_path)?;
+            let view_key_path = keys_dir_path.join(format!("{}.key", id));
+            generate_verifier_key(&view_key_bin_path, &view_key_path)?;
 
-            Ok(Verifier { id, view_key })
+            Ok(Verifier { id, view_key_path })
         })
         .collect::<eyre::Result<Vec<Verifier>>>()?;
 
@@ -445,10 +450,7 @@ pub fn run_integration_test(
     // Construct MessageWaiters which wait for specific messages
     // during the ceremony before joining.
     let coordinator_ready = MessageWaiter::spawn(
-        vec![
-            CeremonyMessage::RoundWaitingForParticipants(1),
-            CeremonyMessage::CoordinatorProxyReady,
-        ],
+        vec![CeremonyMessage::RoundWaitingForParticipants(1)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
@@ -476,15 +478,15 @@ pub fn run_integration_test(
     let mut process_joins: Vec<Box<dyn MultiJoinable>> = Vec::new();
 
     // Run the nodejs proxy server for the coordinator.
-    let coordinator_proxy_out_dir =
-        create_dir_if_not_exists(options.out_dir.join("coordinator_proxy"))?;
-    let coordinator_proxy_join = run_coordinator_proxy(
-        coordinator_dir,
-        ceremony_tx.clone(),
-        ceremony_rx.clone(),
-        coordinator_proxy_out_dir,
-    )?;
-    process_joins.push(Box::new(coordinator_proxy_join));
+    // let coordinator_proxy_out_dir =
+    //     create_dir_if_not_exists(options.out_dir.join("coordinator_proxy"))?;
+    // let coordinator_proxy_join = run_coordinator_proxy(
+    //     coordinator_dir,
+    //     ceremony_tx.clone(),
+    //     ceremony_rx.clone(),
+    //     coordinator_proxy_out_dir,
+    // )?;
+    // process_joins.push(Box::new(coordinator_proxy_join));
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
@@ -544,7 +546,7 @@ pub fn run_integration_test(
             &verifier.id,
             verifier_bin_path,
             COORDINATOR_API_URL,
-            &verifier.view_key,
+            &verifier.view_key_path,
             ceremony_tx.clone(),
             ceremony_rx.clone(),
             verifier_out_dir,
