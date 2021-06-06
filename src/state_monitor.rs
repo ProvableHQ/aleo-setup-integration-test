@@ -19,20 +19,9 @@ use std::{
     path::Path,
 };
 
-/// Install the dependencies for running the state monitor.
-pub fn setup_state_monitor(state_monitor_dir: impl AsRef<Path> + Debug) -> eyre::Result<()> {
-    Exec::cmd("bash")
-        .cwd(state_monitor_dir)
-        .arg("install_serve.sh")
-        .join()
-        .map_err(eyre::Error::from)
-        .map_err(|error| error.wrap_err(format!("Error running `install_serve.sh`")))
-        .and_then(default_parse_exit_status)
-}
-
 /// Starts the `aleo-setup-state-monitor` server.
 pub fn run_state_monitor(
-    state_monitor_dir: impl AsRef<Path> + Debug,
+    state_monitor_bin: impl AsRef<Path> + Debug,
     transcript_dir: impl AsRef<Path> + Debug,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
@@ -43,16 +32,16 @@ pub fn run_state_monitor(
 
     tracing::info!("Starting setup state monitor.");
 
-    if !state_monitor_dir.as_ref().exists() {
+    if !state_monitor_bin.as_ref().exists() {
         return Err(eyre::eyre!(
-            "Supplied state_monitor_repo {:?} does not exist.",
-            state_monitor_dir
+            "State monitor binary {:?} does not exist.",
+            state_monitor_bin
         ));
     }
 
-    let exec = Exec::cmd("bash")
-        .env("TRANSCRIPT_DIR", transcript_dir.as_ref())
-        .arg(state_monitor_dir.as_ref().join("start_serve.sh"));
+    let exec = Exec::cmd(state_monitor_bin.as_ref().canonicalize()?)
+        .arg("--transcript")
+        .arg(transcript_dir.as_ref());
 
     let log_file_path = out_dir.as_ref().join("state_monitor.log");
 

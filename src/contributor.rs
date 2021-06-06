@@ -163,7 +163,7 @@ pub fn run_contributor(
         .env("RUST_LOG", "debug,hyper=warn")
         .arg("contribute")
         .args(&["--passphrase", "test"])
-        .args(&["--api-url", &config.coordinator_api_url]) // <COORDINATOR_API_URL>
+        .args(&["--api-url", &config.coordinator_api_url])
         .args(&["--keys-path", &keys_file_path_string]);
 
     let log_file_path = config.out_dir.join("contributor.log");

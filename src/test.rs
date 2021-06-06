@@ -10,7 +10,7 @@ use crate::{
     process::{join_multiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
-    state_monitor::{run_state_monitor, setup_state_monitor},
+    state_monitor::run_state_monitor,
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
@@ -303,7 +303,15 @@ pub fn run_integration_test(
     clone_git_repos(&options)?;
 
     let coordinator_dir = options.aleo_setup_coordinator_repo.dir();
+    let coordinator_bin_path = coordinator_dir
+        .join("target/release")
+        .join("aleo-setup-coordinator");
+
     let state_monitor_dir = options.aleo_setup_state_monitor_repo.dir();
+    let state_monitor_bin_path = state_monitor_dir
+        .join("target/release")
+        .join("aleo-setup-state-monitor");
+
     let setup_dir = options.aleo_setup_repo.dir();
 
     if !options.no_prereqs {
@@ -311,18 +319,11 @@ pub fn run_integration_test(
         // able to compile `aleo-setup`.
         install_rust_toolchain(&rust_1_48)
             .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_1_48))?;
-
-        if options.state_monitor {
-            setup_state_monitor(state_monitor_dir)?;
-        }
     }
 
     // Build the setup coordinator Rust project.
     build_rust_crate(coordinator_dir, &rust_1_48)
         .wrap_err("error while building aleo-setup-coordinator crate")?;
-    let coordinator_bin_path = Path::new(coordinator_dir)
-        .join("target/release")
-        .join("aleo-setup-coordinator");
 
     // Build the setup1-contributor Rust project.
     build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_48)
@@ -335,6 +336,9 @@ pub fn run_integration_test(
     // Build the setup1-cli-tools Rust project.
     build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_48)
         .wrap_err("error while building setup1-verifier crate")?;
+
+    build_rust_crate(state_monitor_dir, &RustToolchain::Stable)
+        .wrap_err("error while building aleo-setup-state-monitor server crate")?;
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
@@ -499,7 +503,7 @@ pub fn run_integration_test(
 
     if options.state_monitor {
         let state_monitor_join = run_state_monitor(
-            state_monitor_dir,
+            state_monitor_bin_path,
             &coordinator_config.transcript_dir(),
             ceremony_tx.clone(),
             ceremony_rx.clone(),
