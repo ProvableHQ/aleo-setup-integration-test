@@ -141,6 +141,11 @@ pub fn run_multi_test(
     specification_file: impl AsRef<Path>,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<()> {
+    tracing::info!(
+        "Running multiple integration tests using specification {:?}",
+        specification_file.as_ref()
+    );
+
     let specification_string = std::fs::read_to_string(specification_file.as_ref())
         .wrap_err_with(|| eyre::eyre!("Error while reading specification ron file"))?;
 

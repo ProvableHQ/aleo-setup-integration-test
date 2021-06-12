@@ -22,19 +22,22 @@ fn main() -> eyre::Result<()> {
 
     let options: CmdOptions = CmdOptions::from_args();
 
-    match options.cmd {
+    let result = match options.cmd {
         Some(Command::Multi(multi_options)) => {
             run_multi_test(&multi_options.specification_file, &log_writer).wrap_err_with(|| {
                 eyre::eyre!(
                     "Error while running tests specified in {:?}",
                     &multi_options.specification_file
                 )
-            })?;
+            })
         }
-        None => {
-            run_integration_test(&TestOptions::try_from(&options)?, &log_writer)?;
-        }
+        None => run_integration_test(&TestOptions::try_from(&options)?, &log_writer).map(|_| ()),
+    };
+
+    // report the error to tracing and log file
+    if let Err(error) = &result {
+        tracing::error!("{}", error);
     }
 
-    Ok(())
+    result
 }
