@@ -7,7 +7,7 @@ use aleo_setup_integration_test::{
     multi::run_multi_test,
     options::{CmdOptions, Command},
     reporting::{setup_reporting, LogFileWriter},
-    test::{run_integration_test, TestOptions},
+    test::{integration_test, TestOptions},
 };
 
 use eyre::Context;
@@ -31,7 +31,7 @@ fn main() -> eyre::Result<()> {
                 )
             })
         }
-        None => run_integration_test(&TestOptions::try_from(&options)?, &log_writer).map(|_| ()),
+        None => integration_test(&TestOptions::try_from(&options)?, &log_writer).map(|_| ()),
     };
 
     // report the error to tracing and log file

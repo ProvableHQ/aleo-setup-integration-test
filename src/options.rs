@@ -63,11 +63,11 @@ pub struct CmdOptions {
     #[structopt(long)]
     pub state_monitor: bool,
 
-    /// Timout (in seconds) for running a ceremony round of the
-    /// integration test (not including setting up prerequisites). If
-    /// this time is exceeded for a given round, the test will fail.
+    /// Timout for this individual integration test (not including
+    /// setting up prerequisites). If this time is exceeded, the test
+    /// will fail.
     #[structopt(long, short = "t", parse(try_from_str = parse_round_timout))]
-    pub round_timeout: Option<std::time::Duration>,
+    pub timout: Option<std::time::Duration>,
 
     /// Specify a local repository for the `aleo-setup` project.
     #[structopt(long)]

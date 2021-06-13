@@ -62,6 +62,7 @@ pub fn generate_verifier_key(
 }
 
 /// Data relating to a verifier.
+#[derive(Clone, Debug)]
 pub struct Verifier {
     /// A short id used to reference this verifier within the
     /// integration test.
