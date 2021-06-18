@@ -44,6 +44,12 @@ struct CoordinatorTomlConfiguration {
     /// the reliability is 8 or above, then the contributor is allowed
     /// to join the queue.
     reliability_threshold: u8,
+
+    /// TODO: refactor later to use a proper address type
+    listen_address: String,
+
+    /// TODO: refactor later to use a proper address type
+    database_address: String,
 }
 
 impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
@@ -60,6 +66,8 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             // TODO: update this when reliability checks are implemented.
             check_reliability: false,
             reliability_threshold: 8,
+            listen_address: "0.0.0.0:9000".into(),
+            database_address: "127.0.0.1".into(),
         }
     }
 }
