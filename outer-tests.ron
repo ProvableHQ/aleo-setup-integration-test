@@ -30,67 +30,89 @@
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "3",
-            contributors: 2,
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "6",
-            contributors: 3,
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
         (
             id: "10",
-            contributors: 4,
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 4,
+                ),
+            ],
         ),
         (
             id: "11",
-            contributors: 1,
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "13",
-            contributors: 2,
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "16",
-            contributors: 3,
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
             round_timout: None,
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
     ],
 )
