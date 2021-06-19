@@ -4,6 +4,7 @@
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
+    net::SocketAddr,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -25,7 +26,7 @@ use crate::{
 
 /// The format of the configuration json configuration file, used with
 /// the `--config` command line option for `aleo-setup-coordinator`.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 struct CoordinatorTomlConfiguration {
     /// The setup we are going to run.
     setup: Environment,
@@ -44,6 +45,12 @@ struct CoordinatorTomlConfiguration {
     /// the reliability is 8 or above, then the contributor is allowed
     /// to join the queue.
     reliability_threshold: u8,
+
+    /// TODO: refactor later to use a proper address type
+    listen_address: SocketAddr,
+
+    /// TODO: is this actually in use??
+    database_address: SocketAddr,
 }
 
 impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
@@ -60,6 +67,8 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             // TODO: update this when reliability checks are implemented.
             check_reliability: false,
             reliability_threshold: 8,
+            listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
+            database_address: SocketAddr::from_str("127.0.0.1:2000").unwrap(),
         }
     }
 }

@@ -43,7 +43,9 @@ impl Default for RustToolchain {
 }
 
 /// Install a version of the rust toolchain using `rustup`.
+#[tracing::instrument(level = "error")]
 pub fn install_rust_toolchain(toolchain: &RustToolchain) -> eyre::Result<()> {
+    tracing::info!("Installing rust toolchain (if required)");
     let cmd = Exec::cmd("rustup").arg("toolchain").arg("install");
 
     let cmd = match toolchain {

@@ -7,7 +7,6 @@ This repository contains the integration test for [aleo-setup](https://github.co
 Before running, you need to have the following installed:
 
 + [`rustup`](https://rustup.rs/), and the required linker for you system. (on Ubuntu this involves installing `build-essential` most likely).
-+ Recent version of [`npm`](https://www.npmjs.com/get-npm).
 + openssl development headers (`libssl-dev` and `pkg-config` on Ubuntu).
 + Python 3 with `pip` (if you want to use the [`aleo-setup-state-monitor`](https://github.com/AleoHQ/aleo-setup-state-monitor)).
 

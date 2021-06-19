@@ -1,6 +1,6 @@
 //! Options for running the integration test.
 
-use std::path::PathBuf;
+use std::{net::SocketAddr, path::PathBuf};
 
 use serde::Serialize;
 use structopt::StructOpt;
@@ -49,6 +49,10 @@ pub struct CmdOptions {
     #[structopt(long, short = "o", default_value = "out")]
     pub out_dir: PathBuf,
 
+    /// Whether to skip building the components being tested.
+    #[structopt(long)]
+    pub skip_build: bool,
+
     /// What environment to use for the setup.
     #[structopt(
         long,
@@ -80,6 +84,11 @@ pub struct CmdOptions {
     /// Specify a local repository for the `aleo-setup-state-monitor` project.
     #[structopt(long)]
     pub aleo_setup_state_monitor_repo: Option<PathBuf>,
+
+    /// The address used for the `aleo-setup-state-monitor` web
+    /// server.
+    #[structopt(long, default_value = "127.0.0.1:5001")]
+    pub state_monitor_address: SocketAddr,
 
     #[structopt(subcommand)]
     pub cmd: Option<Command>,
