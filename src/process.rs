@@ -70,6 +70,7 @@ pub fn join_multiple(mut joins: Vec<Box<dyn MultiJoinable>>) -> std::thread::Res
         join.join()?;
         tracing::debug!("Joins remaining: {:?}", joins);
     }
+    tracing::debug!("Joined all processes");
     Ok(())
 }
 

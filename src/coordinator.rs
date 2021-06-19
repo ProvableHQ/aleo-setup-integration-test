@@ -239,22 +239,33 @@ impl CoordinatorStateReporter {
         match self.current_state {
             CoordinatorState::ProcessStarted => {
                 if BOOTED_RE.is_match(&line) {
+                    tracing::debug!("Coordinator process has started");
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundWaitingForParticipants(1))?;
                     self.current_state = CoordinatorState::RoundWaitingForParticipants(1);
                 }
             }
             CoordinatorState::RoundWaitingForParticipants(round) => {
+                // Check whether any participants have beend dropped
+                // while the round is waiting for participants before
+                // the round has started.
                 self.check_participant_dropped(line)?;
                 if ROUND_STARTED_RE.is_match(&line) {
+                    tracing::debug!(
+                        "Detected that round {} is now waiting for participants.",
+                        round
+                    );
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStarted(round))?;
                     self.current_state = CoordinatorState::RoundRunning(round);
                 }
             }
             CoordinatorState::RoundRunning(round) => {
+                // Check whether any participants have beend dropped
+                // while the round is running.
                 self.check_participant_dropped(line)?;
                 if ROUND_STARTED_AGGREGATION_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} is has started running.", round);
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStartedAggregation(round))?;
                     self.current_state = CoordinatorState::RoundAggregating(round);
@@ -292,6 +303,7 @@ impl CoordinatorStateReporter {
             }
             CoordinatorState::RoundAggregating(round) => {
                 if ROUND_AGGREGATED_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} is aggregating.", round);
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundAggregated(round))?;
                     self.current_state = CoordinatorState::RoundWaitingForFinish(round);
@@ -299,6 +311,7 @@ impl CoordinatorStateReporter {
             }
             CoordinatorState::RoundWaitingForFinish(round) => {
                 if ROUND_FINISHED_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} has finished.", round);
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundFinished(round))?;
                     self.current_state = CoordinatorState::RoundFinished(round);

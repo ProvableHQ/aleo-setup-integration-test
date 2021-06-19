@@ -33,6 +33,11 @@ pub struct CmdOptions {
     #[structopt(long, short = "n")]
     pub no_prereqs: bool,
 
+    /// Don't attempt to build the component crates, use previously
+    /// built artefacts.
+    #[structopt(long, short = "b")]
+    pub no_builds: bool,
+
     /// Number of contributor participants for the test.
     #[structopt(long, default_value = "1")]
     pub contributors: u8,

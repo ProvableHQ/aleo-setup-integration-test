@@ -37,19 +37,17 @@ pub fn monitor_drops(
 
         loop {
             match ceremony_rx.recv()? {
+                CeremonyMessage::RoundFinished(_) => {
+                    check_drops(&contributor_drops)?;
+
+                    break;
+                }
                 CeremonyMessage::Shutdown(reason) => {
                     if let ShutdownReason::TestFinished = reason {
-                        if !contributor_drops.is_empty() {
-                            return Err(eyre::eyre!(
-                                "The specified drops did not occur as \
-                                    expected during the ceremony: {:?}",
-                                contributor_drops
-                            ));
-                        }
+                        check_drops(&contributor_drops)?;
                     }
 
-                    tracing::info!("Thread terminated gracefully");
-                    return Ok(());
+                    break;
                 }
                 CeremonyMessage::ParticipantDropped(participant) => {
                     match &participant {
@@ -75,5 +73,23 @@ pub fn monitor_drops(
                 _ => {}
             }
         }
+
+        tracing::info!("Thread terminated gracefully");
+
+        Ok(())
     })
+}
+
+fn check_drops(
+    contributor_drops: &HashMap<ContributorRef, DropContributorConfig>,
+) -> eyre::Result<()> {
+    if !contributor_drops.is_empty() {
+        return Err(eyre::eyre!(
+            "The specified drops did not occur as \
+                expected during the ceremony: {:?}",
+            contributor_drops
+        ));
+    } else {
+        Ok(())
+    }
 }

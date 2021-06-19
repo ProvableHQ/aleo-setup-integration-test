@@ -111,19 +111,15 @@ pub struct ContributorConfig {
 /// Allows the threads created by [run_contributor()] to be joined.
 #[derive(Debug)]
 pub struct ContributorJoin {
-    monitor_join: MonitorProcessJoin,
-    drop_join: Option<std::thread::JoinHandle<()>>,
+    monitor_process_join: MonitorProcessJoin,
+    monitor_ceremony_join: std::thread::JoinHandle<()>,
 }
 
 impl ContributorJoin {
     /// Joins the threads created by [run_contributor()].
     fn join(self) -> std::thread::Result<()> {
-        self.monitor_join.join()?;
-        if let Some(join) = self.drop_join {
-            join.join()
-        } else {
-            Ok(())
-        }
+        self.monitor_process_join.join()?;
+        self.monitor_ceremony_join.join()
     }
 }
 
@@ -168,7 +164,7 @@ pub fn run_contributor(
 
     let log_file_path = config.out_dir.join("contributor.log");
 
-    let (monitor_join, monitor_tx) = run_monitor_process(
+    let (monitor_process_join, monitor_tx) = run_monitor_process(
         config.id.to_string(),
         exec,
         default_parse_exit_status,
@@ -181,60 +177,72 @@ pub fn run_contributor(
 
     let contributor_ref = config.contributor_ref.clone();
     let contributor_id = config.id.clone();
-    let drop_join = if let Some(drop_config) = config.drop {
-        let drop_span = tracing::error_span!("drop");
-        Some(std::thread::spawn(move || {
-            let _guard = drop_span.enter();
-            let mut ceremony_rx = ceremony_rx;
 
-            let mut n_contributions: u64 = 0;
+    let monitor_ceremony_span = tracing::error_span!("ceremony");
 
-            loop {
-                match ceremony_rx
-                    .recv()
-                    .expect("Error receiving message from ceremony")
-                {
-                    CeremonyMessage::Shutdown(_) => break,
-                    CeremonyMessage::SuccessfulContribution {
-                        contributor,
-                        chunk: _,
-                    } => {
-                        if contributor == contributor_ref {
-                            n_contributions += 1;
-                            tracing::info!(
-                                "contributor {} recieved {} out of {} contributions (before drop will occur)",
-                                contributor_id,
-                                n_contributions,
-                                drop_config.after_contributions
-                            );
-                        }
-                    }
-                    _ => {}
-                }
+    let monitor_ceremony_join = std::thread::spawn(move || {
+        let _guard = monitor_ceremony_span.enter();
+        let mut ceremony_rx = ceremony_rx;
 
-                if n_contributions >= drop_config.after_contributions {
-                    tracing::info!(
-                        "Contributor {} ({}) received {} contributions, terminating process now to perform drop.", 
-                        &contributor_id,
-                        &contributor_ref,
-                        n_contributions,
+        let mut n_contributions: u64 = 0;
+
+        loop {
+            match ceremony_rx
+                .recv()
+                .expect("Error receiving message from ceremony")
+            {
+                CeremonyMessage::Shutdown(_) => break,
+                CeremonyMessage::RoundFinished(round) => {
+                    tracing::debug!(
+                        "Finished contributing to round {}, terminating process.",
+                        round
                     );
                     monitor_tx
                         .broadcast(MonitorProcessMessage::Terminate)
                         .expect("Error sending message to process monitor");
                     break;
                 }
+                CeremonyMessage::SuccessfulContribution {
+                    contributor,
+                    chunk: _,
+                } => {
+                    if let Some(drop_config) = &config.drop {
+                        if contributor == contributor_ref {
+                            n_contributions += 1;
+                            tracing::info!(
+                                    "contributor {} recieved {} out of {} contributions (before drop will occur)",
+                                    contributor_id,
+                                    n_contributions,
+                                    drop_config.after_contributions
+                                );
+                        }
+                    }
+                }
+                _ => {}
             }
 
-            tracing::debug!("Thread closing gracefully.")
-        }))
-    } else {
-        None
-    };
+            if let Some(drop_config) = &config.drop {
+                if n_contributions >= drop_config.after_contributions {
+                    tracing::info!(
+                            "Contributor {} ({}) received {} contributions, terminating process now to perform drop.", 
+                            &contributor_id,
+                            &contributor_ref,
+                            n_contributions,
+                        );
+                    monitor_tx
+                        .broadcast(MonitorProcessMessage::Terminate)
+                        .expect("Error sending message to process monitor");
+                    break;
+                }
+            }
+        }
+
+        tracing::debug!("Thread closing gracefully.")
+    });
 
     let join = ContributorJoin {
-        monitor_join,
-        drop_join,
+        monitor_process_join,
+        monitor_ceremony_join,
     };
 
     Ok(join)

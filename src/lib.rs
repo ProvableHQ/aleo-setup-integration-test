@@ -53,6 +53,15 @@ pub enum ShutdownReason {
     TestFinished,
 }
 
+impl std::fmt::Display for ShutdownReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShutdownReason::Error => f.write_str("there was an error"),
+            ShutdownReason::TestFinished => todo!("the test is finished"),
+        }
+    }
+}
+
 /// Message sent between the various components running during the
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
@@ -60,19 +69,24 @@ pub enum ShutdownReason {
 #[non_exhaustive]
 pub enum CeremonyMessage {
     /// Notify the receivers that the specified round has started.
+    /// Data is the round number.
     RoundStarted(u64),
     /// Notify the receivers that the specified round has completed
     /// verification, and aggregation of the contributions by the
     /// coordinator has begun.
+    /// Data is the round number.
     RoundStartedAggregation(u64),
     /// Notify the receivers that the specified round has successfully
     /// been aggregated.
+    /// Data is the round number.
     RoundAggregated(u64),
     /// Notify the receivers that the specified round has finished
     /// sucessfully.
+    /// Data is the round number.
     RoundFinished(u64),
     /// Notify the receivers that the coordinator is ready and waiting
     /// for participants for the specified round before starting it.
+    /// Data is the round number.
     RoundWaitingForParticipants(u64),
     /// Notify the receivers that the coordinator has just dropped a
     /// participant in the current round.

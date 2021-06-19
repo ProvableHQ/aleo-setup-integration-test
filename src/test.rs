@@ -365,7 +365,7 @@ pub fn integration_test(
         .iter()
         .enumerate()
         .map(|(i, round)| {
-            let round_number = i + 1;
+            let round_number = (i + 1) as u64;
 
             // Create the contributors, generate their keys.
             let contributors: Vec<Contributor> = (1..=round.contributors)
@@ -590,6 +590,13 @@ pub fn integration_test(
         })
         .collect::<eyre::Result<Vec<RoundResults>>>()?;
 
+    // Tell the other threads to shutdown, safely terminating their
+    // child processes.
+    ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::TestFinished))?;
+
+    // Wait for threads to close after being told to shut down.
+    join_multiple(process_joins).expect("Error while joining monitor threads.");
+
     match time_limit_join {
         Some(handle) => {
             tracing::debug!("Waiting for time limit to join");
@@ -609,7 +616,7 @@ pub fn integration_test(
 
 pub struct RoundConfig {
     /// The number of the round in the ceremony.
-    round_number: usize,
+    round_number: u64,
     /// A vector of contributors and their configurations. New
     /// contributor processes will be started for each of these.
     contributors: Vec<(Contributor, ContributorConfig)>,
@@ -645,23 +652,25 @@ fn test_round(
 
     // Construct MessageWaiters which wait for specific messages
     // during the ceremony before joining.
-    let round1_started = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundStarted(1)],
+    let round_started = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundStarted(round_config.round_number)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round1_aggregation_started = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundStartedAggregation(1)],
+    let round_aggregation_started = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundStartedAggregation(
+            round_config.round_number,
+        )],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round1_finished = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundFinished(1)],
+    let round_finished = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundFinished(round_config.round_number)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round1_aggregated = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundAggregated(1)],
+    let round_aggregated = MessageWaiter::spawn(
+        vec![CeremonyMessage::RoundAggregated(round_config.round_number)],
         CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
@@ -684,19 +693,19 @@ fn test_round(
 
     let round_start_time = std::time::Instant::now();
 
-    tracing::info!("Waiting for round 1 to start.");
+    tracing::info!("Waiting for round to start.");
 
-    match round1_started
+    match round_started
         .join()
-        .wrap_err("Error while waiting for round 1 to start")?
+        .wrap_err("Error while waiting for round to start")?
     {
         WaiterJoinCondition::Shutdown => {}
         WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 has started!");
+            tracing::info!("Round has started!");
 
             if let Err(error) = check_participants_in_round(
                 &coordinator_config,
-                1,
+                round_config.round_number,
                 &contributors,
                 &round_config.verifiers,
             ) {
@@ -706,24 +715,24 @@ fn test_round(
         }
     }
 
-    round1_aggregation_started
+    round_aggregation_started
         .join()
-        .wrap_err("Error while waiting for round aggregation 1 to start")?
+        .wrap_err("Error while waiting for round aggregation to start")?
         .on_messages_received(|| {
             tracing::info!(
-                "Round 1 contributions and verifications complete. Aggregation has started."
+                "Round contributions and verifications complete. Aggregation has started."
             )
         });
 
     let aggregation_start_time = std::time::Instant::now();
 
-    let aggregation_duration = match round1_aggregated
+    let aggregation_duration = match round_aggregated
         .join()
-        .wrap_err("Error while waiting for round 1 to aggregate.")?
+        .wrap_err("Error while waiting for round to aggregate.")?
     {
         WaiterJoinCondition::Shutdown => None,
         WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 Aggregated.");
+            tracing::info!("Round aggregated.");
             let aggregation_duration = aggregation_start_time.elapsed();
             tracing::info!(
                 "Aggregation time: {}",
@@ -733,13 +742,13 @@ fn test_round(
         }
     };
 
-    let total_round_duration = match round1_finished
+    let total_round_duration = match round_finished
         .join()
-        .wrap_err("Error while waiting for round 1 to finish.")?
+        .wrap_err("Error while waiting for round to finish.")?
     {
         WaiterJoinCondition::Shutdown => None,
         WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 Finished.");
+            tracing::info!("Round finished.");
             let total_round_duration = round_start_time.elapsed();
             tracing::info!(
                 "Total round time: {}",
@@ -749,14 +758,10 @@ fn test_round(
         }
     };
 
-    // TODO: this should not shut down the ceremony.
-    // Tell the other threads to shutdown, safely terminating their
-    // child processes.
-    ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::TestFinished))?;
-
     // Wait for threads to close after being told to shut down.
     join_multiple(process_joins).expect("Error while joining monitor threads.");
 
+    tracing::debug!("Waiting for monitor_drops thread to join.");
     monitor_drops_join
         .join()
         .expect("Error while monitor drops thread")?;
