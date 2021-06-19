@@ -2,7 +2,9 @@
 //! tests.
 
 use std::{
+    net::SocketAddr,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Duration,
 };
 
@@ -30,6 +32,12 @@ struct Specification {
     /// test run before starting.
     pub clean: bool,
 
+    /// Whether or not to build the components being tested. By
+    /// default this is `true`.  Setting this to `false` makes the
+    /// test faster for development purposes.
+    #[serde(default = "default_build")]
+    pub build: bool,
+
     /// Keep the git repositories. The following effects take place
     /// when this is enabled:
     ///
@@ -37,9 +45,11 @@ struct Specification {
     ///   enabled.
     pub keep_repos: bool,
 
-    /// If true, don't attempt to install install prerequisites. Makes
-    /// the test faster for development purposes.
-    pub no_prereqs: bool,
+    /// Whether to install install prerequisites. By default this is
+    /// `true`. Setting this to `false` makes the test faster for
+    /// development purposes.
+    #[serde(default = "default_install_prerequisites")]
+    pub install_prerequisites: bool,
 
     /// Whether to run the `aleo-setup-state-monitor` application.
     /// Requires `python3` and `pip` to be installed. Only supported
@@ -85,8 +95,25 @@ struct Specification {
     #[serde(default = "default_aleo_setup_state_monitor")]
     pub aleo_setup_state_monitor_repo: Repo,
 
+    /// The address used for the `aleo-setup-state-monitor` web
+    /// server. By default `127.0.0.1:5001`.
+    #[serde(default = "default_state_monitor_address")]
+    pub state_monitor_address: SocketAddr,
+
     /// Specifications for the individual tests.
     pub tests: Vec<SingleTestOptions>,
+}
+
+fn default_build() -> bool {
+    true
+}
+
+fn default_install_prerequisites() -> bool {
+    true
+}
+
+fn default_state_monitor_address() -> SocketAddr {
+    SocketAddr::from_str("127.0.0.1:5001").unwrap()
 }
 
 /// Options for each individual test in the [Specification]'s `tests`
@@ -196,8 +223,9 @@ pub fn run_multi_test(
             let test_options = if i == 0 {
                 TestOptions {
                     clean: false,
+                    build: specification.build,
                     keep_repos: specification.keep_repos,
-                    no_prereqs: specification.no_prereqs,
+                    install_prerequisites: specification.install_prerequisites,
                     contributors: options.contributors,
                     replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
@@ -211,12 +239,14 @@ pub fn run_multi_test(
                     aleo_setup_state_monitor_repo: specification
                         .aleo_setup_state_monitor_repo
                         .clone(),
+                    state_monitor_address: specification.state_monitor_address.clone(),
                 }
             } else {
                 TestOptions {
                     clean: false,
+                    build: false,
                     keep_repos: true,
-                    no_prereqs: true,
+                    install_prerequisites: true,
                     contributors: options.contributors,
                     replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
@@ -230,6 +260,7 @@ pub fn run_multi_test(
                     aleo_setup_state_monitor_repo: specification
                         .aleo_setup_state_monitor_repo
                         .clone(),
+                    state_monitor_address: specification.state_monitor_address.clone(),
                 }
             };
 

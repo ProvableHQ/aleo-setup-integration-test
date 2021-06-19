@@ -10,7 +10,7 @@ use crate::{
     process::{join_multiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
-    state_monitor::run_state_monitor,
+    state_monitor::{run_state_monitor, StateMonitorConfig},
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
@@ -28,6 +28,7 @@ use std::{
     convert::TryFrom,
     fs::File,
     io::Write,
+    net::SocketAddr,
     path::{Path, PathBuf},
 };
 
@@ -84,6 +85,9 @@ pub struct TestOptions {
     /// test run before starting.
     pub clean: bool,
 
+    /// Whether or not to build the components being tested.
+    pub build: bool,
+
     /// Keep the git repositories. The following effects take place
     /// when this is enabled:
     ///
@@ -93,7 +97,7 @@ pub struct TestOptions {
 
     /// If true, don't attempt to install install prerequisites. Makes
     /// the test faster for development purposes.
-    pub no_prereqs: bool,
+    pub install_prerequisites: bool,
 
     /// Number of contributor participants for the test.
     pub contributors: u8,
@@ -131,6 +135,10 @@ pub struct TestOptions {
 
     /// The code repository for the `aleo-setup-state-monitor` project.
     pub aleo_setup_state_monitor_repo: Repo,
+
+    /// The address used for the `aleo-setup-state-monitor` web
+    /// server.
+    pub state_monitor_address: SocketAddr,
 }
 
 impl TryFrom<&CmdOptions> for TestOptions {
@@ -139,8 +147,9 @@ impl TryFrom<&CmdOptions> for TestOptions {
     fn try_from(options: &CmdOptions) -> Result<Self, Self::Error> {
         Ok(Self {
             clean: options.clean,
+            build: !options.skip_build,
             keep_repos: options.keep_repos,
-            no_prereqs: options.no_prereqs,
+            install_prerequisites: !options.no_prereqs,
             contributors: options.contributors,
             replacement_contributors: options.replacement_contributors,
             verifiers: options.verifiers,
@@ -164,6 +173,7 @@ impl TryFrom<&CmdOptions> for TestOptions {
                 .clone()
                 .map(|dir| Repo::Local(LocalGitRepo { dir }))
                 .unwrap_or_else(default_aleo_setup_state_monitor),
+            state_monitor_address: options.state_monitor_address,
         })
     }
 }
@@ -317,31 +327,34 @@ pub fn run_integration_test(
 
     let setup_dir = options.aleo_setup_repo.dir();
 
-    if !options.no_prereqs {
+    if options.install_prerequisites {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
         install_rust_toolchain(&rust_1_48)
             .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_1_48))?;
     }
 
-    // Build the setup coordinator Rust project.
-    build_rust_crate(coordinator_dir, &rust_1_48)
-        .wrap_err("error while building aleo-setup-coordinator crate")?;
+    if options.build {
+        // Build the setup coordinator Rust project.
+        build_rust_crate(coordinator_dir, &rust_1_48)
+            .wrap_err("error while building aleo-setup-coordinator crate")?;
 
-    // Build the setup1-contributor Rust project.
-    build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_48)
-        .wrap_err("error while building setup1-contributor crate")?;
+        // Build the setup1-contributor Rust project.
+        build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_48)
+            .wrap_err("error while building setup1-contributor crate")?;
 
-    // Build the setup1-verifier Rust project.
-    build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_48)
-        .wrap_err("error while building setup1-verifier crate")?;
+        // Build the setup1-verifier Rust project.
+        build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_48)
+            .wrap_err("error while building setup1-verifier crate")?;
 
-    // Build the setup1-cli-tools Rust project.
-    build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_48)
-        .wrap_err("error while building setup1-verifier crate")?;
+        // Build the setup1-cli-tools Rust project.
+        build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_48)
+            .wrap_err("error while building setup1-verifier crate")?;
 
-    build_rust_crate(state_monitor_dir, &RustToolchain::Stable)
-        .wrap_err("error while building aleo-setup-state-monitor server crate")?;
+        // Build the aleo-setup-state-monitor Rust project.
+        build_rust_crate(state_monitor_dir, &RustToolchain::Stable)
+            .wrap_err("error while building aleo-setup-state-monitor server crate")?;
+    }
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
@@ -505,12 +518,17 @@ pub fn run_integration_test(
     process_joins.push(Box::new(coordinator_join));
 
     if options.state_monitor {
+        let state_monitor_config = StateMonitorConfig {
+            state_monitor_bin: state_monitor_bin_path,
+            transcript_dir: coordinator_config.transcript_dir(),
+            out_dir: options.out_dir.clone(),
+            address: options.state_monitor_address.clone(),
+        };
+
         let state_monitor_join = run_state_monitor(
-            state_monitor_bin_path,
-            &coordinator_config.transcript_dir(),
+            state_monitor_config,
             ceremony_tx.clone(),
             ceremony_rx.clone(),
-            &options.out_dir,
         )?;
         process_joins.push(Box::new(state_monitor_join));
     }

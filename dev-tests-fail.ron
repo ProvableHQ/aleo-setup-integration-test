@@ -1,7 +1,7 @@
 (
     clean: true,
+    build: false,
     keep_repos: true,
-    no_prereqs: false,
     state_monitor: true,
     out_dir: "out",
     aleo_setup_repo: (
