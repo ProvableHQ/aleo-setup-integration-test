@@ -124,6 +124,7 @@ pub fn run_coordinator(
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
+        .env("RUST_BACKTRACE", "1")
         .env("RUST_LOG", "debug,hyper=warn")
         .arg("--config")
         .arg(

@@ -305,3 +305,17 @@ pub fn run_multi_test(
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Specification;
+
+    /// Test deserializing `example-config.ron` to [Specification].
+    #[test]
+    fn test_deserialize_example() {
+        let example_string = std::fs::read_to_string("example-config.ron")
+            .expect("Error while reading example-config.ron file");
+        let _example: Specification =
+            ron::from_str(&example_string).expect("Error while deserializing example-config.ron");
+    }
+}

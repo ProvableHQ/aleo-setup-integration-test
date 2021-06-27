@@ -71,8 +71,6 @@
         (
             /// Id for the individual test.
             id: "1",
-            /// Number of contributor participants for the test.
-            contributors: 1,
             /// Number of verifier participants for the test.
             verifiers: 1,
             /// Number of replacement contributors for the test.
@@ -80,10 +78,6 @@
             /// What environment to use for the setup.
             /// Possible options: `development`, `inner`, `outer`, `universal`.
             environment: development,
-            /// Timout (in seconds) for running a ceremony round of the
-            /// integration test (not including setting up prerequisites). If
-            /// this time is exceeded for a given round, the test will fail.
-            round_timout: Some(18000),
             /// Whether to skip running this test.
             skip: false,
             /// Configure the tests performed for each round of the ceremony.

@@ -24,7 +24,6 @@
     tests: [
         (
             id: "1",
-            contributors: 1,
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
