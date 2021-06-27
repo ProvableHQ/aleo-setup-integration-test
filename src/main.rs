@@ -1,13 +1,10 @@
 //! Integration test for `aleo-setup-coordinator` and `aleo-setup`'s
 //! `setup1-contributor` and `setup1-verifier`.
 
-use std::convert::TryFrom;
-
 use aleo_setup_integration_test::{
-    multi::run_multi_test,
-    options::{CmdOptions, Command},
+    options::CmdOptions,
     reporting::{setup_reporting, LogFileWriter},
-    test::{integration_test, TestOptions},
+    specification::run_test_specification,
 };
 
 use eyre::Context;
@@ -22,17 +19,13 @@ fn main() -> eyre::Result<()> {
 
     let options: CmdOptions = CmdOptions::from_args();
 
-    let result = match options.cmd {
-        Some(Command::Multi(multi_options)) => {
-            run_multi_test(&multi_options.specification_file, &log_writer).wrap_err_with(|| {
-                eyre::eyre!(
-                    "Error while running tests specified in {:?}",
-                    &multi_options.specification_file
-                )
-            })
-        }
-        None => integration_test(&TestOptions::try_from(&options)?, &log_writer).map(|_| ()),
-    };
+    let result =
+        run_test_specification(&options.specification_file, &log_writer).wrap_err_with(|| {
+            eyre::eyre!(
+                "Error while running tests specified in {:?}",
+                &options.specification_file
+            )
+        });
 
     // report the error to tracing and log file
     if let Err(error) = &result {

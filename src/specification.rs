@@ -157,7 +157,7 @@ fn skip_default() -> bool {
 }
 
 /// Run multiple tests specified in the ron specification file.
-pub fn run_multi_test(
+pub fn run_test_specification(
     specification_file: impl AsRef<Path>,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<()> {

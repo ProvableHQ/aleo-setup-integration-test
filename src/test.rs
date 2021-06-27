@@ -6,7 +6,6 @@ use crate::{
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
-    options::CmdOptions,
     process::{join_multiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
@@ -25,7 +24,6 @@ use serde::{Deserialize, Serialize};
 
 use std::{
     collections::HashMap,
-    convert::TryFrom,
     net::SocketAddr,
     path::{Path, PathBuf},
 };
@@ -156,46 +154,6 @@ pub struct TestOptions {
 
     /// Configuration for each round of the ceremony that will be tested.
     pub rounds: Vec<TestRound>,
-}
-
-impl TryFrom<&CmdOptions> for TestOptions {
-    type Error = eyre::Error;
-
-    fn try_from(options: &CmdOptions) -> Result<Self, Self::Error> {
-        let rounds = vec![TestRound {
-            contributors: options.contributors,
-            contributor_drops: Vec::new(),
-        }];
-        Ok(Self {
-            clean: options.clean,
-            build: !options.skip_build,
-            keep_repos: options.keep_repos,
-            install_prerequisites: !options.no_prereqs,
-            replacement_contributors: options.replacement_contributors,
-            verifiers: options.verifiers,
-            out_dir: options.out_dir.clone(),
-            environment: options.environment,
-            state_monitor: options.state_monitor,
-            timout: options.timout,
-            aleo_setup_repo: options
-                .aleo_setup_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup),
-            aleo_setup_coordinator_repo: options
-                .aleo_setup_coordinator_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup_coordinator),
-            aleo_setup_state_monitor_repo: options
-                .aleo_setup_state_monitor_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup_state_monitor),
-            rounds,
-            state_monitor_address: options.state_monitor_address,
-        })
-    }
 }
 
 #[derive(Serialize)]

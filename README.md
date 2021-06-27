@@ -44,7 +44,7 @@ See the other `*-tests.ron` files for tests for each of the setups `development`
 
 ## Configuration Format
 
-You can see the `*-tests.ron` files in the repository root (e.g. [dev-tests.ron](./dev-tests.ron)) for an example of the configuration format. They use the [Rusty Object Notation (RON)](https://github.com/ron-rs/ron) format, there are editor extensions available. This format was chosen because it allows structured/nested data (like JSON) but also allows comments and looser formatting for handwritten files (like TOML).
+See [example-config.ron](./example-config.ron) in the repository root for an example of the configuration format. They use the [Rusty Object Notation (RON)](https://github.com/ron-rs/ron) format, there are editor extensions available. This format was chosen because it allows structured/nested data (like JSON) but also allows comments and looser formatting for handwritten files (like TOML).
 
 ### Using Local Repositories
 
