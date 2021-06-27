@@ -13,8 +13,8 @@ use crate::{
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
-    CeremonyMessage, ContributorRef, Environment, MessageWaiter, ShutdownReason,
-    WaiterJoinCondition,
+    waiter::{MessageWaiter, WaiterJoinCondition},
+    CeremonyMessage, ContributorRef, Environment, ShutdownReason,
 };
 
 use eyre::Context;
@@ -74,17 +74,55 @@ pub fn default_aleo_setup_state_monitor() -> Repo {
     })
 }
 
+/// Start a ceremony participant after
+/// [StartAfterContributions::contributions] have been made in the
+/// current round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartAfterContributions {
+    /// See [StartAfterContributions].
+    contributions: u64,
+}
+
+/// The configuration for when a contributor will be started
+/// during/before a round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ContributorStartConfig {
+    /// Start the contributor at the beginning of the ceremony. This
+    /// is only a valid option for replacement contributors.
+    CeremonyStart,
+    /// Start the contributor while the current round is waiting for
+    /// participants to join.
+    RoundStart,
+    // See [StartAfterContributions].
+    AfterContributions(StartAfterContributions),
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TestRound {
     /// Number of contributor participants for this round of the
-    /// ceremony.
+    /// ceremony. By default the contributor will be started at the
+    /// start of the round as per
+    /// [ContributorStartConfig::RoundStart], however you may choose
+    /// to override this for contributors with
+    /// [TestRound::contributor_starts].
     pub contributors: u8,
 
-    /// Configure expected contributor drops. A contributor is
-    /// assigned automatically to each specified config. The number of
-    /// configs should not exceed the number of contributors.
+    /// (Optional) Configure expected contributor drops. A contributor from
+    /// [Self::contributors] is assigned automatically to each
+    /// specified config. The number of configs should not exceed the
+    /// number of contributors. Default: [].
     #[serde(default)]
     pub contributor_drops: Vec<DropContributorConfig>,
+
+    /// (Optional) Configure when contributors will start. A
+    /// contributor from [Self::contributors] is assigned
+    /// automatically to each specified config. The number of configs
+    /// should not exceed the number of contributors. Any contributors
+    /// not configured here will be started with the start of the
+    /// round as per [ContributorStartConfig::RoundStart]. Default:
+    /// [].
+    #[serde(default)]
+    pub contributor_starts: Vec<ContributorStartConfig>,
 }
 
 impl Default for TestRound {
@@ -92,6 +130,7 @@ impl Default for TestRound {
         Self {
             contributors: 1,
             contributor_drops: Default::default(),
+            contributor_starts: Default::default(),
         }
     }
 }
@@ -324,6 +363,28 @@ pub fn integration_test(
         .enumerate()
         .map(|(i, round)| {
             let round_number = (i + 1) as u64;
+            let span = tracing::error_span!("round_config", round = round_number);
+            let _span_guard = span.enter();
+
+            if round.contributor_starts.len() > round.contributors as usize {
+                return Err(eyre::eyre!(
+                    "Invalid `contributor_starts` for round {}. Its length ({}) \
+                        should not exceed the number of contributors ({}).",
+                    round_number,
+                    round.contributor_starts.len(),
+                    round.contributors,
+                ));
+            }
+
+            if round.contributor_drops.len() > round.contributors as usize {
+                return Err(eyre::eyre!(
+                    "Invalid `contributor_drops` for round {}. Its length ({}) \
+                        should not exceed the number of contributors ({}).",
+                    round_number,
+                    round.contributor_drops.len(),
+                    round.contributors,
+                ));
+            }
 
             // Create the contributors, generate their keys.
             let contributors: Vec<Contributor> = (1..=round.contributors)
@@ -341,10 +402,31 @@ pub fn integration_test(
                             || format!("Error generating contributor {} key.", id),
                         )?;
 
+                    // By default contributors start with RoundStart
+                    // unless specified in contributor_starts
+                    let start = round
+                        .contributor_starts
+                        .get((i - 1) as usize)
+                        .cloned()
+                        .unwrap_or(ContributorStartConfig::RoundStart);
+
+                    match &start {
+                        ContributorStartConfig::CeremonyStart => {
+                            return Err(eyre::eyre!(
+                                "Invalid contributor_starts for round {}. {:?} \
+                                    is not a valid start config for a normal contributor.",
+                                round_number,
+                                start
+                            ))
+                        }
+                        _ => {}
+                    }
+
                     Ok(Contributor {
                         id,
                         key_file,
                         address: contributor_key.address,
+                        start,
                     })
                 })
                 .collect::<eyre::Result<Vec<Contributor>>>()?;
@@ -421,6 +503,7 @@ pub fn integration_test(
                 id: id.clone(),
                 key_file,
                 address: contributor_key.address,
+                start: ContributorStartConfig::CeremonyStart,
             };
 
             // Run the `setup1-contributor`.
@@ -534,7 +617,6 @@ pub fn integration_test(
         process_joins.push(Box::new(verifier_join));
     }
 
-    // TODO: check that time limit still works
     let round_results = round_configs
         .into_iter()
         .map(|round_config| {
@@ -634,6 +716,7 @@ fn test_round(
     );
 
     // Run the contributors and replacement contributors.
+    // TODO: filter by contributors that are start == RoundStart
     let contributors: Vec<Contributor> = round_config
         .contributors
         .into_iter()

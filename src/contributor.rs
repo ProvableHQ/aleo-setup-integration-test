@@ -7,6 +7,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     process::{MonitorProcessMessage, MultiJoinable},
+    test::ContributorStartConfig,
     AleoPublicKey, CeremonyMessage, ContributorRef, Environment,
 };
 
@@ -53,6 +54,7 @@ pub fn generate_contributor_key(
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
     Ok(contributor_key)
 }
+
 /// Data relating to a contributor.
 #[derive(Clone)]
 pub struct Contributor {
@@ -63,6 +65,8 @@ pub struct Contributor {
     pub key_file: PathBuf,
     /// Aleo address
     pub address: AleoPublicKey,
+    /// When this contributor is configured to start during the round.
+    pub start: ContributorStartConfig,
 }
 
 impl Contributor {

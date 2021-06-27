@@ -126,20 +126,22 @@ struct SingleTestOptions {
     /// Number of verifier participants for the test.
     pub verifiers: u8,
 
-    /// Number of replacement contributors for the test.
+    /// (Optional) Number of replacement contributors for the test.
+    /// Default: 0
     #[serde(default = "default_replacement_contributors")]
     pub replacement_contributors: u8,
 
     /// What environment to use for the setup.
     pub environment: Environment,
 
-    /// Timout (in seconds) for running the ceremony (not including
-    /// setting up prerequisites). If this time is exceeded the test
-    /// will fail.
+    /// (Optional) Time limit for this individual test (in seconds).
+    /// Exceeding this will cause the test to fail. If set to
+    /// `None`  then there is no time limit. Default: `None`
     #[serde(default)]
     pub timout: Option<u64>,
 
-    /// Whether to skip running this test.
+    /// (Optional) Whether to skip running this test. Default:
+    /// `false`.
     #[serde(default = "skip_default")]
     pub skip: bool,
 
