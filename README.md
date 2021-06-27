@@ -18,31 +18,11 @@ rustup install stable
 
 ## Building/Running
 
-### Single
-
-You can run a single simple integration test directly from the command line:
+You can run a integration tests with the following command where `test.ron` is the test specification:
 
 ```bash
-cargo run
+cargo run -- test.ron
 ```
-
-Available command line options can be found:
-
-```bash
-cargo run -- --help
-```
-
-### Multi
-
-You can run the scripted development integration tests with the following `multi` sub-command:
-
-```bash
-cargo run -- multi dev-tests.ron
-```
-
-See the other `*-tests.ron` files for tests for each of the setups `development`, `inner`, `outer`, and `universal` (not yet implemented).
-
-## Configuration Format
 
 See [example-config.ron](./example-config.ron) in the repository root for an example of the configuration format. They use the [Rusty Object Notation (RON)](https://github.com/ron-rs/ron) format, there are editor extensions available. This format was chosen because it allows structured/nested data (like JSON) but also allows comments and looser formatting for handwritten files (like TOML).
 
