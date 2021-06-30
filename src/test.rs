@@ -374,7 +374,7 @@ pub fn run_integration_test(
         })
         .collect::<eyre::Result<Vec<Verifier>>>()?;
 
-    let contributor_bin_path = setup_build_output_dir.join("aleo-setup-contributor");
+    let contributor_bin_path = setup_build_output_dir.join("setup1-contributor");
 
     // Create the contributors, generate their keys.
     let contributors: Vec<Contributor> = (1..=options.contributors)
