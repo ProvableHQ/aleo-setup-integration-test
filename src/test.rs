@@ -2,11 +2,12 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use crate::{
+    ceremony_waiter::spawn_contribution_waiter,
     contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
-    process::{join_multiple, MultiJoinable},
+    join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, StateMonitorConfig},
@@ -80,7 +81,7 @@ pub fn default_aleo_setup_state_monitor() -> Repo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartAfterContributions {
     /// See [StartAfterContributions].
-    contributions: u64,
+    after_contributions: u64,
 }
 
 /// The configuration for when a contributor will be started
@@ -362,8 +363,8 @@ pub fn integration_test(
         .rounds
         .iter()
         .enumerate()
-        .map(|(i, round)| {
-            let round_number = (i + 1) as u64;
+        .map(|(round_index, round)| {
+            let round_number = (round_index + 1) as u64;
             let span = tracing::error_span!("round_config", round = round_number);
             let _span_guard = span.enter();
 
@@ -403,31 +404,10 @@ pub fn integration_test(
                             || format!("Error generating contributor {} key.", id),
                         )?;
 
-                    // By default contributors start with RoundStart
-                    // unless specified in contributor_starts
-                    let start = round
-                        .contributor_starts
-                        .get((i - 1) as usize)
-                        .cloned()
-                        .unwrap_or(ContributorStartConfig::RoundStart);
-
-                    match &start {
-                        ContributorStartConfig::CeremonyStart => {
-                            return Err(eyre::eyre!(
-                                "Invalid contributor_starts for round {}. {:?} \
-                                    is not a valid start config for a normal contributor.",
-                                round_number,
-                                start
-                            ))
-                        }
-                        _ => {}
-                    }
-
                     Ok(Contributor {
                         id,
                         key_file,
                         address: contributor_key.address,
-                        start,
                     })
                 })
                 .collect::<eyre::Result<Vec<Contributor>>>()?;
@@ -453,13 +433,34 @@ pub fn integration_test(
             // Create the config for running each contributor.
             let contributors = contributors
                 .iter()
-                .map(|contributor| {
+                .enumerate()
+                .map(|(i, contributor)| {
                     // Run the `setup1-contributor`.
                     let contributor_out_dir =
                         create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
                     let drop = contributor_drops
                         .get(&contributor.as_contributor_ref())
                         .cloned();
+
+                    // By default contributors start with RoundStart
+                    // unless specified in contributor_starts
+                    let start = round
+                        .contributor_starts
+                        .get(i)
+                        .cloned()
+                        .unwrap_or(ContributorStartConfig::RoundStart);
+
+                    match &start {
+                        ContributorStartConfig::CeremonyStart => {
+                            return Err(eyre::eyre!(
+                                "Invalid contributor_starts for round {}. {:?} \
+                                    is not a valid start config for a normal contributor.",
+                                round_number,
+                                start
+                            ))
+                        }
+                        _ => {}
+                    }
 
                     Ok(ContributorConfig {
                         id: contributor.id.clone(),
@@ -470,6 +471,7 @@ pub fn integration_test(
                         coordinator_api_url: COORDINATOR_API_URL.to_string(),
                         out_dir: contributor_out_dir,
                         drop,
+                        start,
                     })
                 })
                 .zip(contributors.iter())
@@ -504,7 +506,6 @@ pub fn integration_test(
                 id: id.clone(),
                 key_file,
                 address: contributor_key.address,
-                start: ContributorStartConfig::CeremonyStart,
             };
 
             // Run the `setup1-contributor`.
@@ -518,6 +519,7 @@ pub fn integration_test(
                 coordinator_api_url: COORDINATOR_API_URL.to_string(),
                 out_dir: contributor_out_dir,
                 drop: None,
+                start: ContributorStartConfig::CeremonyStart,
             };
 
             Ok((contributor, contributor_config))
@@ -553,6 +555,7 @@ pub fn integration_test(
     // during the ceremony before joining.
     let coordinator_ready = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundWaitingForParticipants(1)],
+        || Ok(()),
         ceremony_rx.clone(),
     );
 
@@ -654,6 +657,7 @@ pub fn integration_test(
     Ok(TestResults { round_results })
 }
 
+/// Configuration for running a round of the ceremony.
 pub struct RoundConfig {
     /// The number of the round in the ceremony.
     round_number: u64,
@@ -694,37 +698,86 @@ fn test_round(
     // during the ceremony before joining.
     let round_started = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundStarted(round_config.round_number)],
+        || Ok(()),
         ceremony_rx.clone(),
     );
     let round_aggregation_started = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundStartedAggregation(
             round_config.round_number,
         )],
+        || Ok(()),
         ceremony_rx.clone(),
     );
     let round_finished = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundFinished(round_config.round_number)],
+        || Ok(()),
         ceremony_rx.clone(),
     );
     let round_aggregated = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundAggregated(round_config.round_number)],
+        || Ok(()),
         ceremony_rx.clone(),
     );
 
-    // Run the contributors and replacement contributors.
-    // TODO: filter by contributors that are start == RoundStart
-    let contributors: Vec<Contributor> = round_config
+    // Run the contributors which are to be present at the start of
+    // the round.
+    let starting_contributors: Vec<Contributor> = round_config
         .contributors
-        .into_iter()
+        .iter()
+        .filter(
+            |(_contributor, contributor_config)| match contributor_config.start {
+                // We are only concerned with contributors which start
+                // at the start of the round.
+                ContributorStartConfig::RoundStart => true,
+                _ => false,
+            },
+        )
         .map(|(contributor, contributor_config)| {
-            // Run the `setup1-contributor`.
-
-            let contributor_join =
-                run_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
+            let contributor_join = run_contributor(
+                contributor_config.clone(),
+                ceremony_tx.clone(),
+                ceremony_rx.clone(),
+            )?;
             process_joins.push(Box::new(contributor_join));
-            Ok(contributor)
+            Ok(contributor.clone())
         })
         .collect::<eyre::Result<Vec<Contributor>>>()?;
+
+    // Configure/set-up the contributors which will join at some later
+    // point during the round.
+    let mid_round_contributor_joins: Vec<Box<dyn MultiJoinable>> = round_config
+        .contributors
+        .iter()
+        .filter_map(
+            |(_contributor, contributor_config)| match &contributor_config.start {
+                ContributorStartConfig::AfterContributions(start_config) => {
+                    let process_join = JoinLater::new();
+                    let waiter_process_join = process_join.clone();
+                    let waiter_ceremony_tx = ceremony_tx.clone();
+                    let waiter_ceremony_rx = ceremony_rx.clone();
+                    let this_contributor_config = contributor_config.clone();
+                    let waiter_join: Box<dyn MultiJoinable> = Box::new(spawn_contribution_waiter(
+                        start_config.after_contributions,
+                        move || {
+                            let contributor_join = run_contributor(
+                                this_contributor_config,
+                                waiter_ceremony_tx,
+                                waiter_ceremony_rx,
+                            )?;
+                            waiter_process_join.register(contributor_join);
+                            Ok(())
+                        },
+                        ceremony_rx.clone(),
+                    ));
+                    let process_join_boxed: Box<dyn MultiJoinable> = Box::new(process_join);
+                    let joins: Box<dyn MultiJoinable> =
+                        Box::new(JoinMultiple::new(vec![waiter_join, process_join_boxed]));
+                    Some(joins)
+                }
+                _ => None,
+            },
+        )
+        .collect::<Vec<Box<dyn MultiJoinable>>>();
 
     let mut round_errors: Vec<eyre::Error> = Vec::new();
 
@@ -743,7 +796,7 @@ fn test_round(
             if let Err(error) = check_participants_in_round(
                 &coordinator_config,
                 round_config.round_number,
-                &contributors,
+                &starting_contributors,
                 &round_config.verifiers,
             ) {
                 ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
@@ -796,7 +849,9 @@ fn test_round(
     };
 
     // Wait for threads to close after being told to shut down.
-    join_multiple(process_joins).expect("Error while joining monitor threads.");
+    join_multiple(process_joins).expect("Error while joining process monitor threads.");
+    join_multiple(mid_round_contributor_joins)
+        .expect("Error while joining mid round contributor join threads");
 
     tracing::debug!("Waiting for monitor_drops thread to join.");
     monitor_drops_join

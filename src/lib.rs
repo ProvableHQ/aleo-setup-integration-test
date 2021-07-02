@@ -3,10 +3,12 @@ use waiter::IsShutdownMessage;
 
 use std::{fmt::Display, str::FromStr};
 
+pub mod ceremony_waiter;
 pub mod contributor;
 pub mod coordinator;
 pub mod drop_participant;
 pub mod git;
+pub mod join;
 pub mod npm;
 pub mod options;
 pub mod process;

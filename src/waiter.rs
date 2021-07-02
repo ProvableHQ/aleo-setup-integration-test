@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 
 use mpmc_bus::Receiver;
 
+use crate::join::MultiJoinable;
+
 /// The condition that caused the [MessageWaiter] to join.
 pub enum WaiterJoinCondition {
     /// A ceremony shutdown was initiated.
@@ -35,6 +37,14 @@ pub struct MessageWaiter<T> {
     message_type: PhantomData<T>,
 }
 
+impl<T> std::fmt::Debug for MessageWaiter<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageWaiter")
+            .field("join_handle", &self.join_handle)
+            .finish()
+    }
+}
+
 impl<T> MessageWaiter<T>
 where
     T: Clone + Sync + Send + 'static,
@@ -46,10 +56,16 @@ where
     /// in [WaiterClosureResult::Join]. `initial_state` is the
     /// starting state passed to the `handler` the first time a
     /// message is received.
-    pub fn spawn<C, S>(handler: C, initial_state: S, mut rx: Receiver<T>) -> Self
+    pub fn spawn<H, S, J>(
+        handler: H,
+        on_messages_received: J,
+        initial_state: S,
+        mut rx: Receiver<T>,
+    ) -> Self
     where
-        C: Fn(T, S) -> WaiterClosureResult<S> + Send + 'static,
+        H: Fn(T, S) -> WaiterClosureResult<S> + Send + 'static,
         S: Send + 'static,
+        J: FnOnce() -> eyre::Result<()> + Send + 'static,
     {
         let join_handle = std::thread::spawn(move || {
             let mut state = initial_state;
@@ -63,6 +79,11 @@ where
                         continue;
                     }
                     WaiterClosureResult::Join(join) => {
+                        match &join {
+                            WaiterJoinCondition::Shutdown => {}
+                            WaiterJoinCondition::MessagesReceived => on_messages_received()?,
+                        }
+
                         return Ok(join);
                     }
                 }
@@ -85,6 +106,18 @@ where
     }
 }
 
+impl<T> MultiJoinable for MessageWaiter<T>
+where
+    T: Clone + Sync + Send + 'static,
+{
+    fn join(self: Box<Self>) -> std::thread::Result<()> {
+        match MessageWaiter::join(*self) {
+            Ok(_join_condition) => Ok(()),
+            Err(error) => Err(Box::new(error)),
+        }
+    }
+}
+
 pub trait IsShutdownMessage {
     /// Returns `true` if this message a shutdown message, otherwise
     /// returns `false`.
@@ -100,9 +133,17 @@ where
     /// shutdown message specified by the [IsShutdownMessage] trait is
     /// received. Call [MessageWaiter::join()] to block until all
     /// expected messages have been received.
-    pub fn spawn_expected(expected_messages: Vec<T>, rx: Receiver<T>) -> Self {
+    pub fn spawn_expected<J>(
+        expected_messages: Vec<T>,
+        on_messages_received: J,
+        rx: Receiver<T>,
+    ) -> Self
+    where
+        J: FnOnce() -> eyre::Result<()> + Send + 'static,
+    {
         Self::spawn(
             move |message, state| Self::vec_waiter(message, state),
+            on_messages_received,
             expected_messages,
             rx,
         )
@@ -141,18 +182,27 @@ mod test {
     use super::MessageWaiter;
     use mpmc_bus::Bus;
 
+    impl IsShutdownMessage for u8 {
+        fn is_shutdown_message(&self) -> bool {
+            *self == 0
+        }
+    }
+
     #[test]
     fn test_spawn_expected() {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();
 
-        impl IsShutdownMessage for u8 {
-            fn is_shutdown_message(&self) -> bool {
-                *self == 0
-            }
-        }
-
-        let waiter = MessageWaiter::spawn_expected(vec![1, 2, 3], rx);
+        let on_messages_received = Arc::new(Mutex::new(false));
+        let on_messages_received_thread = on_messages_received.clone();
+        let waiter = MessageWaiter::spawn_expected(
+            vec![1, 2, 3],
+            move || {
+                *on_messages_received_thread.lock().unwrap() = true;
+                Ok(())
+            },
+            rx,
+        );
 
         let has_joined = Arc::new(Mutex::new(false));
 
@@ -161,6 +211,8 @@ mod test {
             waiter.join().unwrap();
             *has_joined_thread.lock().unwrap() = true;
         });
+
+        assert!(!*on_messages_received.lock().unwrap());
 
         assert!(!*has_joined.lock().unwrap());
         bus.broadcast(1).unwrap();
@@ -171,5 +223,45 @@ mod test {
 
         waiter_joiner.join().unwrap();
         assert!(*has_joined.lock().unwrap());
+        assert!(*on_messages_received.lock().unwrap());
+    }
+
+    /// Test that upon shutdown the waiter is joined, but the
+    /// on_messages_receieved closure is not invoked.
+    #[test]
+    fn test_spawn_expected_shutdown() {
+        let bus = Bus::<u8>::new(100);
+        let rx = bus.subscribe();
+
+        let on_messages_received = Arc::new(Mutex::new(false));
+        let on_messages_received_thread = on_messages_received.clone();
+        let waiter = MessageWaiter::spawn_expected(
+            vec![1, 2, 3],
+            move || {
+                *on_messages_received_thread.lock().unwrap() = true;
+                Ok(())
+            },
+            rx,
+        );
+
+        let has_joined = Arc::new(Mutex::new(false));
+
+        let has_joined_thread = has_joined.clone();
+        let waiter_joiner = std::thread::spawn(move || {
+            waiter.join().unwrap();
+            *has_joined_thread.lock().unwrap() = true;
+        });
+
+        assert!(!*on_messages_received.lock().unwrap());
+
+        assert!(!*has_joined.lock().unwrap());
+        bus.broadcast(1).unwrap();
+        assert!(!*has_joined.lock().unwrap());
+        bus.broadcast(0).unwrap();
+
+        waiter_joiner.join().unwrap();
+
+        assert!(*has_joined.lock().unwrap());
+        assert!(!*on_messages_received.lock().unwrap());
     }
 }

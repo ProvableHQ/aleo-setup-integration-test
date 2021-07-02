@@ -3,10 +3,11 @@
 
 use crate::{
     drop_participant::DropContributorConfig,
+    join::MultiJoinable,
+    process::MonitorProcessMessage,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    process::{MonitorProcessMessage, MultiJoinable},
     test::ContributorStartConfig,
     AleoPublicKey, CeremonyMessage, ContributorRef, Environment,
 };
@@ -65,8 +66,6 @@ pub struct Contributor {
     pub key_file: PathBuf,
     /// Aleo address
     pub address: AleoPublicKey,
-    /// When this contributor is configured to start during the round.
-    pub start: ContributorStartConfig,
 }
 
 impl Contributor {
@@ -85,7 +84,7 @@ impl Contributor {
 }
 
 /// Configuration for running a contributor.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContributorConfig {
     /// An identifier for this contributor, used only by the
     /// integration test, also used as the name of the working
@@ -110,6 +109,8 @@ pub struct ContributorConfig {
     /// contributor will not be deliberately dropped from the round,
     /// and if it is dropped, an error will occur.
     pub drop: Option<DropContributorConfig>,
+    /// When this contributor is configured to start during the round.
+    pub start: ContributorStartConfig,
 }
 
 /// Allows the threads created by [run_contributor()] to be joined.
