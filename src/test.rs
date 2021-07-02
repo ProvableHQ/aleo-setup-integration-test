@@ -357,6 +357,7 @@ pub fn integration_test(
         })
         .collect::<eyre::Result<Vec<Verifier>>>()?;
 
+    // Construct the configuration for each round.
     let round_configs: Vec<RoundConfig> = options
         .rounds
         .iter()
@@ -449,8 +450,8 @@ pub fn integration_test(
                 })
                 .collect::<eyre::Result<HashMap<ContributorRef, DropContributorConfig>>>()?;
 
-            // Run the contributors and replacement contributors.
-            let contributors_pair = contributors
+            // Create the config for running each contributor.
+            let contributors = contributors
                 .iter()
                 .map(|contributor| {
                     // Run the `setup1-contributor`.
@@ -480,7 +481,7 @@ pub fn integration_test(
 
             Ok(RoundConfig {
                 round_number,
-                contributors: contributors_pair,
+                contributors,
                 contributor_drops,
                 verifiers: verifiers.clone(),
             })
@@ -550,9 +551,8 @@ pub fn integration_test(
 
     // Construct MessageWaiters which wait for specific messages
     // during the ceremony before joining.
-    let coordinator_ready = MessageWaiter::spawn(
+    let coordinator_ready = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundWaitingForParticipants(1)],
-        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 
@@ -692,26 +692,22 @@ fn test_round(
 
     // Construct MessageWaiters which wait for specific messages
     // during the ceremony before joining.
-    let round_started = MessageWaiter::spawn(
+    let round_started = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundStarted(round_config.round_number)],
-        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round_aggregation_started = MessageWaiter::spawn(
+    let round_aggregation_started = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundStartedAggregation(
             round_config.round_number,
         )],
-        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round_finished = MessageWaiter::spawn(
+    let round_finished = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundFinished(round_config.round_number)],
-        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
-    let round_aggregated = MessageWaiter::spawn(
+    let round_aggregated = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundAggregated(round_config.round_number)],
-        CeremonyMessage::is_shutdown,
         ceremony_rx.clone(),
     );
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use waiter::IsShutdownMessage;
 
 use std::{fmt::Display, str::FromStr};
 
@@ -101,8 +102,8 @@ pub enum CeremonyMessage {
     Shutdown(ShutdownReason),
 }
 
-impl CeremonyMessage {
-    pub fn is_shutdown(&self) -> bool {
+impl IsShutdownMessage for CeremonyMessage {
+    fn is_shutdown_message(&self) -> bool {
         match self {
             Self::Shutdown(_) => true,
             _ => false,
