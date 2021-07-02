@@ -27,7 +27,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -40,7 +40,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -53,7 +53,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -66,7 +66,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -79,7 +79,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -92,7 +92,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (
@@ -105,7 +105,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: outer,
-            round_timout: None,
+            timout: None,
             skip: false,
             rounds: [
                 (

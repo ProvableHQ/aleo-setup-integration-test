@@ -27,7 +27,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -40,7 +40,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -53,7 +53,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -66,7 +66,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -79,7 +79,7 @@
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -92,7 +92,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -105,7 +105,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -118,7 +118,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -131,7 +131,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
@@ -144,7 +144,7 @@
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
             rounds: [
                 (
