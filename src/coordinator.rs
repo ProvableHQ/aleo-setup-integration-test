@@ -5,6 +5,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     net::SocketAddr,
+    num::{NonZeroU32, NonZeroU8},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -36,21 +37,50 @@ struct CoordinatorTomlConfiguration {
     /// contributors which get dropped during a round.
     replacement_contributors: Vec<AleoPublicKey>,
 
-    /// The option to define if we are checking the reliability
-    /// score of the contributors or not. Defaults to false
-    check_reliability: bool,
-
-    /// Defines the threshold at which we let the contributors to
-    /// join the queue. For example if the threshold is 8 and
-    /// the reliability is 8 or above, then the contributor is allowed
-    /// to join the queue.
-    reliability_threshold: u8,
-
     /// TODO: refactor later to use a proper address type
     listen_address: SocketAddr,
 
     /// TODO: is this actually in use??
     database_address: SocketAddr,
+
+    /// Settings related to reliability checks
+    pub reliability_check: ReliabilityCheckSettings,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ReliabilityCheckSettings {
+    /// The option to define if we are checking the reliability
+    /// score of the contributors or not. Defaults to false
+    pub is_enabled: bool,
+
+    /// Defines the threshold at which we let the contributors to
+    /// join the queue. For example if the threshold is 8 and
+    /// the reliability is 8 or above, then the contributor is allowed
+    /// to join the queue.
+    pub accept_threshold: NonZeroU8,
+
+    /// Settings related to the bandwidth measurement
+    pub bandwidth: BandwidthCheckSettings,
+
+    /// Settings related to the cpu measurement
+    pub cpu: CpuCheckSettings,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BandwidthCheckSettings {
+    /// To convert the speed to score use the following formula:
+    /// score = speed / speed_per_point
+    /// for example: speed = 5000 kilobytes/s, speed_per_point = 1000 kilobytes/s, score = 5
+    /// Defined in kilobytes/s
+    pub speed_per_point: NonZeroU32,
+    /// The score is found as speed / speed_per_point, up to a maximum score
+    pub maximum_score: NonZeroU8,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CpuCheckSettings {
+    /// The score in CPU check can be at most maximum_score
+    pub maximum_score: NonZeroU8,
 }
 
 impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
@@ -64,11 +94,20 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
         Self {
             setup: config.environment,
             replacement_contributors,
-            // TODO: update this when reliability checks are implemented.
-            check_reliability: false,
-            reliability_threshold: 8,
             listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
             database_address: SocketAddr::from_str("127.0.0.1:2000").unwrap(),
+            reliability_check: ReliabilityCheckSettings {
+                // TODO: update this when reliability checks are implemented.
+                is_enabled: false,
+                accept_threshold: NonZeroU8::new(8).unwrap(),
+                bandwidth: BandwidthCheckSettings {
+                    speed_per_point: NonZeroU32::new(1000).unwrap(),
+                    maximum_score: NonZeroU8::new(10).unwrap(),
+                },
+                cpu: CpuCheckSettings {
+                    maximum_score: NonZeroU8::new(10).unwrap(),
+                },
+            },
         }
     }
 }
@@ -125,7 +164,7 @@ pub fn run_coordinator(
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
         .env("RUST_BACKTRACE", "1")
-        .env("RUST_LOG", "debug,hyper=warn")
+        .env("RUST_LOG", "debug")
         .arg("--config")
         .arg(
             toml_config_path

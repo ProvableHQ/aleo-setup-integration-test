@@ -340,7 +340,7 @@ pub fn integration_test(
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
     let setup_build_output_dir = setup_dir.join("target/release");
-    let contributor_bin_path = setup_build_output_dir.join("aleo-setup-contributor");
+    let contributor_bin_path = setup_build_output_dir.join("setup1-contributor");
     let view_key_bin_path = setup_build_output_dir.join("view-key");
 
     // Create the verifiers, generate their keys.
