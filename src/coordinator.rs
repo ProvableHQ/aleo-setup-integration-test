@@ -163,6 +163,7 @@ pub fn run_coordinator(
 
     let exec = Exec::cmd(config.setup_coordinator_bin.canonicalize()?)
         .cwd(&config.out_dir)
+        .env("RUST_BACKTRACE", "1")
         .env("RUST_LOG", "debug")
         .arg("--config")
         .arg(
@@ -188,6 +189,7 @@ pub fn run_coordinator(
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 enum CoordinatorState {
     /// The process has just started.
     ProcessStarted,
@@ -215,10 +217,10 @@ struct CoordinatorStateReporter {
 
 lazy_static::lazy_static! {
     static ref BOOTED_RE: Regex = Regex::new(".*Coordinator has booted up.*").unwrap();
-    static ref ROUND1_STARTED_RE: Regex = Regex::new(".*Advanced ceremony to round 1.*").unwrap();
-    static ref ROUND1_STARTED_AGGREGATION_RE: Regex = Regex::new(".*Starting aggregation on round 1").unwrap();
-    static ref ROUND1_AGGREGATED_RE: Regex = Regex::new(".*Round 1 is aggregated.*").unwrap();
-    static ref ROUND1_FINISHED_RE: Regex = Regex::new(".*Round 1 is finished.*").unwrap();
+    static ref ROUND_STARTED_RE: Regex = Regex::new(".*Advanced ceremony to round (?P<round>[0-9]+).*").unwrap();
+    static ref ROUND_STARTED_AGGREGATION_RE: Regex = Regex::new(".*Starting aggregation on round (?P<round>[0-9]+)").unwrap();
+    static ref ROUND_AGGREGATED_RE: Regex = Regex::new(".*Round (?P<round>[0-9]+) is aggregated.*").unwrap();
+    static ref ROUND_FINISHED_RE: Regex = Regex::new(".*Round (?P<round>[0-9]+) is finished.*").unwrap();
     static ref DROPPED_PARTICIPANT_RE: Regex = Regex::new(".*Dropping (?P<address>aleo[a-z0-9]+)[.](?P<participant_type>contributor|verifier) from the ceremony").unwrap();
     static ref SUCCESSFUL_CONTRIBUTION_RE: Regex = Regex::new(".*((?P<address>aleo[a-z0-9]+)[.]contributor) added a contribution to chunk (?P<chunk>[0-9]+)").unwrap();
 }
@@ -270,29 +272,43 @@ impl CoordinatorStateReporter {
     /// Parse stdout line from the `coordinator` process, broadcast
     /// messages to the ceremony when the coordinator state changes.
     /// Keeps track of the current state of the ceremony.
+    ///
+    /// TODO: verify that the round number in the regular expression
+    /// group matches the current state.
     fn parse_output_line(&mut self, line: &str) -> eyre::Result<()> {
         match self.current_state {
             CoordinatorState::ProcessStarted => {
                 if BOOTED_RE.is_match(&line) {
+                    tracing::debug!("Coordinator process has started");
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundWaitingForParticipants(1))?;
                     self.current_state = CoordinatorState::RoundWaitingForParticipants(1);
                 }
             }
-            CoordinatorState::RoundWaitingForParticipants(1) => {
+            CoordinatorState::RoundWaitingForParticipants(round) => {
+                // Check whether any participants have beend dropped
+                // while the round is waiting for participants before
+                // the round has started.
                 self.check_participant_dropped(line)?;
-                if ROUND1_STARTED_RE.is_match(&line) {
+                if ROUND_STARTED_RE.is_match(&line) {
+                    tracing::debug!(
+                        "Detected that round {} is now waiting for participants.",
+                        round
+                    );
                     self.ceremony_tx
-                        .broadcast(CeremonyMessage::RoundStarted(1))?;
-                    self.current_state = CoordinatorState::RoundRunning(1);
+                        .broadcast(CeremonyMessage::RoundStarted(round))?;
+                    self.current_state = CoordinatorState::RoundRunning(round);
                 }
             }
-            CoordinatorState::RoundRunning(1) => {
+            CoordinatorState::RoundRunning(round) => {
+                // Check whether any participants have beend dropped
+                // while the round is running.
                 self.check_participant_dropped(line)?;
-                if ROUND1_STARTED_AGGREGATION_RE.is_match(&line) {
+                if ROUND_STARTED_AGGREGATION_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} is has started running.", round);
                     self.ceremony_tx
-                        .broadcast(CeremonyMessage::RoundStartedAggregation(1))?;
-                    self.current_state = CoordinatorState::RoundAggregating(1);
+                        .broadcast(CeremonyMessage::RoundStartedAggregation(round))?;
+                    self.current_state = CoordinatorState::RoundAggregating(round);
                 }
 
                 if let Some(captures) = SUCCESSFUL_CONTRIBUTION_RE.captures(line) {
@@ -325,25 +341,28 @@ impl CoordinatorStateReporter {
                         })?;
                 }
             }
-            CoordinatorState::RoundAggregating(1) => {
-                if ROUND1_AGGREGATED_RE.is_match(&line) {
+            CoordinatorState::RoundAggregating(round) => {
+                if ROUND_AGGREGATED_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} is aggregating.", round);
                     self.ceremony_tx
-                        .broadcast(CeremonyMessage::RoundAggregated(1))?;
-                    self.current_state = CoordinatorState::RoundWaitingForFinish(1);
+                        .broadcast(CeremonyMessage::RoundAggregated(round))?;
+                    self.current_state = CoordinatorState::RoundWaitingForFinish(round);
                 }
             }
-            CoordinatorState::RoundWaitingForFinish(1) => {
-                if ROUND1_FINISHED_RE.is_match(&line) {
+            CoordinatorState::RoundWaitingForFinish(round) => {
+                if ROUND_FINISHED_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} has finished.", round);
                     self.ceremony_tx
-                        .broadcast(CeremonyMessage::RoundFinished(1))?;
-                    self.current_state = CoordinatorState::RoundFinished(1);
+                        .broadcast(CeremonyMessage::RoundFinished(round))?;
+                    self.current_state = CoordinatorState::RoundFinished(round);
                 }
             }
-            CoordinatorState::RoundFinished(1) => {
-                // TODO Multiple rounds are not yet supported.
+            CoordinatorState::RoundFinished(round) => {
+                self.ceremony_tx
+                    .broadcast(CeremonyMessage::RoundWaitingForParticipants(round + 1))?;
+                self.current_state = CoordinatorState::RoundWaitingForParticipants(round + 1);
                 return Ok(());
             }
-            _ => return Err(eyre::eyre!("unhandled state: {:?}", self.current_state)),
         }
 
         Ok(())

@@ -13,11 +13,10 @@ use eyre::Context;
 use serde::Deserialize;
 
 use crate::{
-    drop_participant::DropContributorConfig,
     reporting::LogFileWriter,
     test::{
         default_aleo_setup, default_aleo_setup_coordinator, default_aleo_setup_state_monitor,
-        run_integration_test, Repo, TestOptions,
+        integration_test, Repo, TestOptions, TestRound,
     },
     util::create_dir_if_not_exists,
     Environment,
@@ -124,34 +123,30 @@ struct SingleTestOptions {
     /// Id for the individual test.
     pub id: String,
 
-    /// Number of contributor participants for the test.
-    pub contributors: u8,
-
     /// Number of verifier participants for the test.
     pub verifiers: u8,
 
-    /// Number of replacement contributors for the test.
+    /// (Optional) Number of replacement contributors for the test.
+    /// Default: 0
     #[serde(default = "default_replacement_contributors")]
     pub replacement_contributors: u8,
 
     /// What environment to use for the setup.
     pub environment: Environment,
 
-    /// Timout (in seconds) for running a ceremony round of the
-    /// integration test (not including setting up prerequisites). If
-    /// this time is exceeded for a given round, the test will fail.
+    /// (Optional) Time limit for this individual test (in seconds).
+    /// Exceeding this will cause the test to fail. If set to
+    /// `None`  then there is no time limit. Default: `None`
     #[serde(default)]
-    pub round_timout: Option<u64>,
+    pub timout: Option<u64>,
 
-    /// Whether to skip running this test.
+    /// (Optional) Whether to skip running this test. Default:
+    /// `false`.
     #[serde(default = "skip_default")]
     pub skip: bool,
 
-    /// Configure expected contributor drops. A contributor is
-    /// assigned automatically to each specified config. The number of
-    /// configs should not exceed the number of contributors.
-    #[serde(default)]
-    pub contributor_drops: Vec<DropContributorConfig>,
+    /// Configure the tests performed for each round of the ceremony.
+    pub rounds: Vec<TestRound>,
 }
 
 /// Default value for [TestOptions::replacement_contributors].
@@ -164,7 +159,7 @@ fn skip_default() -> bool {
 }
 
 /// Run multiple tests specified in the ron specification file.
-pub fn run_multi_test(
+pub fn run_test_specification(
     specification_file: impl AsRef<Path>,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<()> {
@@ -226,19 +221,18 @@ pub fn run_multi_test(
                     build: specification.build,
                     keep_repos: specification.keep_repos,
                     install_prerequisites: specification.install_prerequisites,
-                    contributors: options.contributors,
                     replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
                     out_dir,
                     environment: options.environment,
                     state_monitor: specification.state_monitor,
-                    round_timout: options.round_timout.map(Duration::from_secs),
-                    contributor_drops: options.contributor_drops.clone(),
+                    timout: options.timout.map(Duration::from_secs),
                     aleo_setup_repo: specification.aleo_setup_repo.clone(),
                     aleo_setup_coordinator_repo: specification.aleo_setup_coordinator_repo.clone(),
                     aleo_setup_state_monitor_repo: specification
                         .aleo_setup_state_monitor_repo
                         .clone(),
+                    rounds: options.rounds.clone(),
                     state_monitor_address: specification.state_monitor_address.clone(),
                 }
             } else {
@@ -247,19 +241,18 @@ pub fn run_multi_test(
                     build: false,
                     keep_repos: true,
                     install_prerequisites: true,
-                    contributors: options.contributors,
                     replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
                     out_dir,
                     environment: options.environment,
                     state_monitor: specification.state_monitor,
-                    round_timout: options.round_timout.map(Duration::from_secs),
-                    contributor_drops: options.contributor_drops.clone(),
+                    timout: options.timout.map(Duration::from_secs),
                     aleo_setup_repo: specification.aleo_setup_repo.clone(),
                     aleo_setup_coordinator_repo: specification.aleo_setup_coordinator_repo.clone(),
                     aleo_setup_state_monitor_repo: specification
                         .aleo_setup_state_monitor_repo
                         .clone(),
+                    rounds: options.rounds.clone(),
                     state_monitor_address: specification.state_monitor_address.clone(),
                 }
             };
@@ -272,7 +265,7 @@ pub fn run_multi_test(
 
             tracing::info!("Running integration test with id {:?}", id);
 
-            run_integration_test(&options, log_writer)
+            integration_test(&options, log_writer)
                 .map(|test_results| {
                     let test_results_str =
                         ron::ser::to_string_pretty(&test_results, Default::default())
@@ -312,5 +305,19 @@ pub fn run_multi_test(
                     format!("{} errors have occurred. This error shows the trace for the last error that occurred. \
                     Check the stdout log for ERROR trace messages for other errors.", n_errors))
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::Specification;
+
+    /// Test deserializing `example-config.ron` to [Specification].
+    #[test]
+    fn test_deserialize_example() {
+        let example_string = std::fs::read_to_string("example-config.ron")
+            .expect("Error while reading example-config.ron file");
+        let _example: Specification =
+            ron::from_str(&example_string).expect("Error while deserializing example-config.ron");
     }
 }

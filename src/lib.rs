@@ -1,23 +1,26 @@
-use mpmc_bus::Receiver;
 use serde::{Deserialize, Serialize};
+use waiter::IsShutdownMessage;
 
-use std::{fmt::Display, marker::PhantomData, str::FromStr};
+use std::{fmt::Display, str::FromStr};
 
+pub mod ceremony_waiter;
 pub mod contributor;
 pub mod coordinator;
 pub mod drop_participant;
 pub mod git;
-pub mod multi;
+pub mod join;
 pub mod npm;
 pub mod options;
 pub mod process;
 pub mod reporting;
 pub mod rust;
+pub mod specification;
 pub mod state_monitor;
 pub mod test;
 pub mod time_limit;
 pub mod util;
 pub mod verifier;
+pub mod waiter;
 
 /// A reference to a contributor in the ceremony.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -53,6 +56,15 @@ pub enum ShutdownReason {
     TestFinished,
 }
 
+impl std::fmt::Display for ShutdownReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShutdownReason::Error => f.write_str("there was an error"),
+            ShutdownReason::TestFinished => todo!("the test is finished"),
+        }
+    }
+}
+
 /// Message sent between the various components running during the
 /// setup ceremony. Each component will have a process monitor running
 /// in its own thread which will listen to these messages.
@@ -60,19 +72,24 @@ pub enum ShutdownReason {
 #[non_exhaustive]
 pub enum CeremonyMessage {
     /// Notify the receivers that the specified round has started.
+    /// Data is the round number.
     RoundStarted(u64),
     /// Notify the receivers that the specified round has completed
     /// verification, and aggregation of the contributions by the
     /// coordinator has begun.
+    /// Data is the round number.
     RoundStartedAggregation(u64),
     /// Notify the receivers that the specified round has successfully
     /// been aggregated.
+    /// Data is the round number.
     RoundAggregated(u64),
     /// Notify the receivers that the specified round has finished
     /// sucessfully.
+    /// Data is the round number.
     RoundFinished(u64),
     /// Notify the receivers that the coordinator is ready and waiting
     /// for participants for the specified round before starting it.
+    /// Data is the round number.
     RoundWaitingForParticipants(u64),
     /// Notify the receivers that the coordinator has just dropped a
     /// participant in the current round.
@@ -87,8 +104,8 @@ pub enum CeremonyMessage {
     Shutdown(ShutdownReason),
 }
 
-impl CeremonyMessage {
-    pub fn is_shutdown(&self) -> bool {
+impl IsShutdownMessage for CeremonyMessage {
+    fn is_shutdown_message(&self) -> bool {
         match self {
             Self::Shutdown(_) => true,
             _ => false,
@@ -146,93 +163,6 @@ impl Display for Environment {
         };
 
         write!(f, "{}", s)
-    }
-}
-
-/// The condition that caused the [MessageWaiter] to join.
-pub enum WaiterJoinCondition {
-    /// A ceremony shutdown was initiated.
-    Shutdown,
-    /// All the messages that the waiter was waiting for have been
-    /// received.
-    MessagesReceived,
-}
-
-impl WaiterJoinCondition {
-    pub fn on_messages_received<F>(&self, f: F)
-    where
-        F: FnOnce(),
-    {
-        match self {
-            WaiterJoinCondition::Shutdown => {}
-            WaiterJoinCondition::MessagesReceived => f(),
-        }
-    }
-}
-
-/// See [MessageWaiter::spawn()].
-pub struct MessageWaiter<T> {
-    join_handle: std::thread::JoinHandle<eyre::Result<WaiterJoinCondition>>,
-    message_type: PhantomData<T>,
-}
-
-impl<T> MessageWaiter<T>
-where
-    T: PartialEq + Clone + Sync + Send + 'static,
-{
-    /// Spawns a thread that listens to `rx` until all messages in
-    /// `expected_messages` have been received once, or if the
-    /// specified `shutdown_message` is received. Call
-    /// [MessageWaiter::join()] to block until all expected messages
-    /// have been received.
-    pub fn spawn<S>(expected_messages: Vec<T>, is_shutdown_message: S, rx: Receiver<T>) -> Self
-    where
-        S: Fn(&T) -> bool + Send + 'static,
-    {
-        let join_handle =
-            std::thread::spawn(move || Self::listen(expected_messages, is_shutdown_message, rx));
-
-        Self {
-            join_handle,
-            message_type: PhantomData,
-        }
-    }
-
-    /// Listen to messages from `rx`, and remove equivalent message
-    /// from `expected_messages` until `expected_messages` is empty.
-    fn listen<S>(
-        mut expected_messages: Vec<T>,
-        is_shutdown_message: S,
-        mut rx: Receiver<T>,
-    ) -> eyre::Result<WaiterJoinCondition>
-    where
-        S: Fn(&T) -> bool,
-    {
-        while !expected_messages.is_empty() {
-            let received_message = rx.recv()?;
-
-            if is_shutdown_message(&received_message) {
-                return Ok(WaiterJoinCondition::Shutdown);
-            }
-
-            if let Some(position) = expected_messages
-                .iter()
-                .position(|message| message == &received_message)
-            {
-                expected_messages.swap_remove(position);
-            }
-        }
-
-        Ok(WaiterJoinCondition::MessagesReceived)
-    }
-
-    /// Wait for all the expected messages to be received.
-    pub fn join(self) -> eyre::Result<WaiterJoinCondition> {
-        match self.join_handle.join() {
-            Err(_panic_error) => panic!("Thread panicked"),
-            Ok(Err(run_error)) => Err(run_error),
-            Ok(Ok(join_condition)) => Ok(join_condition),
-        }
     }
 }
 

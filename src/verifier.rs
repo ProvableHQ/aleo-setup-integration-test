@@ -62,6 +62,7 @@ pub fn generate_verifier_key(
 }
 
 /// Data relating to a verifier.
+#[derive(Clone, Debug)]
 pub struct Verifier {
     /// A short id used to reference this verifier within the
     /// integration test.
@@ -90,6 +91,7 @@ pub fn run_verifier(
     let exec = subprocess::Exec::cmd(verifier_bin_path.as_ref().canonicalize()?)
         .cwd(&out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
+        .env("RUST_BACKTRACE", "1")
         .args(&["--api-url", &coordinator_api_url])
         .arg("--view-key")
         .arg(view_key_path);

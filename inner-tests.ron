@@ -24,103 +24,133 @@
     tests: [
         (
             id: "1",
-            contributors: 1,
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "3",
-            contributors: 2,
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "6",
-            contributors: 3,
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
         (
             id: "10",
-            contributors: 4,
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 4,
+                ),
+            ],
         ),
         (
             id: "15",
-            contributors: 5,
             verifiers: 1,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 5,
+                ),
+            ],
         ),
         (
             id: "21",
-            contributors: 1,
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "23",
-            contributors: 2,
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "26",
-            contributors: 3,
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
         (
             id: "30",
-            contributors: 4,
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 4,
+                ),
+            ],
         ),
         (
             id: "35",
-            contributors: 5,
             verifiers: 2,
             replacement_contributors: 0,
             environment: inner,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 5,
+                ),
+            ],
         ),
     ],
 )

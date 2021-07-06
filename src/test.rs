@@ -1,33 +1,30 @@
-//! Integration test for `aleo-setup-coordinator` and `aleo-setup`'s
+//! Integration test for `aleo contributors: (), contributor_drops: ()  contributors: (), contributor_drops: () -setup-coordinator` and `aleo-setup`'s
 //! `setup1-contributor` and `setup1-verifier`.
 
 use crate::{
+    ceremony_waiter::spawn_contribution_waiter,
     contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
-    options::CmdOptions,
-    process::{join_multiple, MultiJoinable},
+    join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, StateMonitorConfig},
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
-    CeremonyMessage, ContributorRef, Environment, MessageWaiter, ShutdownReason,
-    WaiterJoinCondition,
+    waiter::{MessageWaiter, WaiterJoinCondition},
+    CeremonyMessage, ContributorRef, Environment, ShutdownReason,
 };
 
 use eyre::Context;
 use humantime::format_duration;
-use mpmc_bus::Bus;
+use mpmc_bus::{Bus, Receiver, Sender};
 use serde::{Deserialize, Serialize};
 
 use std::{
     collections::HashMap,
-    convert::TryFrom,
-    fs::File,
-    io::Write,
     net::SocketAddr,
     path::{Path, PathBuf},
 };
@@ -78,6 +75,67 @@ pub fn default_aleo_setup_state_monitor() -> Repo {
     })
 }
 
+/// Start a ceremony participant after
+/// [StartAfterContributions::contributions] have been made in the
+/// current round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartAfterContributions {
+    /// See [StartAfterContributions].
+    after_contributions: u64,
+}
+
+/// The configuration for when a contributor will be started
+/// during/before a round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ContributorStartConfig {
+    /// Start the contributor at the beginning of the ceremony. This
+    /// is only a valid option for replacement contributors.
+    CeremonyStart,
+    /// Start the contributor while the current round is waiting for
+    /// participants to join.
+    RoundStart,
+    // See [StartAfterContributions].
+    AfterContributions(StartAfterContributions),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TestRound {
+    /// Number of contributor participants for this round of the
+    /// ceremony. By default the contributor will be started at the
+    /// start of the round as per
+    /// [ContributorStartConfig::RoundStart], however you may choose
+    /// to override this for contributors with
+    /// [TestRound::contributor_starts].
+    pub contributors: u8,
+
+    /// (Optional) Configure expected contributor drops. A contributor from
+    /// [Self::contributors] is assigned automatically to each
+    /// specified config. The number of configs should not exceed the
+    /// number of contributors. Default: [].
+    #[serde(default)]
+    pub contributor_drops: Vec<DropContributorConfig>,
+
+    /// (Optional) Configure when contributors will start. A
+    /// contributor from [Self::contributors] is assigned
+    /// automatically to each specified config. The number of configs
+    /// should not exceed the number of contributors. Any contributors
+    /// not configured here will be started with the start of the
+    /// round as per [ContributorStartConfig::RoundStart]. Default:
+    /// [].
+    #[serde(default)]
+    pub contributor_starts: Vec<ContributorStartConfig>,
+}
+
+impl Default for TestRound {
+    fn default() -> Self {
+        Self {
+            contributors: 1,
+            contributor_drops: Default::default(),
+            contributor_starts: Default::default(),
+        }
+    }
+}
+
 /// Command line options for running the Aleo Setup integration test.
 #[derive(Debug, Serialize)]
 pub struct TestOptions {
@@ -99,9 +157,6 @@ pub struct TestOptions {
     /// the test faster for development purposes.
     pub install_prerequisites: bool,
 
-    /// Number of contributor participants for the test.
-    pub contributors: u8,
-
     /// Number of replacement contributors for the test.
     pub replacement_contributors: u8,
 
@@ -119,13 +174,10 @@ pub struct TestOptions {
     /// on Linux.
     pub state_monitor: bool,
 
-    /// Timout (in seconds) for running a ceremony round of the
-    /// integration test (not including setting up prerequisites). If
-    /// this time is exceeded for a given round, the test will fail.
-    pub round_timout: Option<std::time::Duration>,
-
-    /// Configuration for dropping contributors during the ceremony.
-    pub contributor_drops: Vec<DropContributorConfig>,
+    /// Timout for this individual integration test (not including
+    /// setting up prerequisites). If this time is exceeded, the test
+    /// will fail.
+    pub timout: Option<std::time::Duration>,
 
     /// The code repository for the `aleo-setup` project.
     pub aleo_setup_repo: Repo,
@@ -139,47 +191,13 @@ pub struct TestOptions {
     /// The address used for the `aleo-setup-state-monitor` web
     /// server.
     pub state_monitor_address: SocketAddr,
-}
 
-impl TryFrom<&CmdOptions> for TestOptions {
-    type Error = eyre::Error;
-
-    fn try_from(options: &CmdOptions) -> Result<Self, Self::Error> {
-        Ok(Self {
-            clean: options.clean,
-            build: !options.skip_build,
-            keep_repos: options.keep_repos,
-            install_prerequisites: !options.no_prereqs,
-            contributors: options.contributors,
-            replacement_contributors: options.replacement_contributors,
-            verifiers: options.verifiers,
-            out_dir: options.out_dir.clone(),
-            environment: options.environment,
-            state_monitor: options.state_monitor,
-            round_timout: options.round_timeout,
-            contributor_drops: Vec::new(),
-            aleo_setup_repo: options
-                .aleo_setup_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup),
-            aleo_setup_coordinator_repo: options
-                .aleo_setup_coordinator_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup_coordinator),
-            aleo_setup_state_monitor_repo: options
-                .aleo_setup_state_monitor_repo
-                .clone()
-                .map(|dir| Repo::Local(LocalGitRepo { dir }))
-                .unwrap_or_else(default_aleo_setup_state_monitor),
-            state_monitor_address: options.state_monitor_address,
-        })
-    }
+    /// Configuration for each round of the ceremony that will be tested.
+    pub rounds: Vec<TestRound>,
 }
 
 #[derive(Serialize)]
-pub struct TestResults {
+pub struct RoundResults {
     /// The time between the start of the round, and the end of the
     /// round.
     #[serde(with = "humantime_serde")]
@@ -217,55 +235,18 @@ pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Create a bash script in the `out_dir` called `tail-logs.sh` which
-/// sets up a tmux session to view the logs using `tail` in real-time.
-fn write_tail_logs_script<'c>(
-    out_dir: impl AsRef<Path>,
-    contributors: impl IntoIterator<Item = &'c Contributor>,
-    verifiers: &[Verifier],
-) -> eyre::Result<()> {
-    let mut file = File::create(out_dir.as_ref().join("tail-logs.sh"))
-        .wrap_err("Unable to create `tail-logs.sh`")?;
-
-    file.write_all("#!/bin/sh\n".as_bytes())?;
-    file.write_all(
-        "tmux new-session -s test -n \"Coordinator\" -d 'tail -f coordinator/coordinator.log'\n"
-            .as_bytes(),
-    )?;
-
-    let mut window_index: u8 = 2;
-
-    for contributor in contributors {
-        let command = format!(
-            "tmux new-window -t test:{0} -n \"{1}\" 'tail -f \"{1}/contributor.log\"'\n",
-            window_index, contributor.id
-        );
-        file.write_all(command.as_bytes())?;
-        window_index += 1;
-    }
-
-    for verifier in verifiers {
-        let command = format!(
-            "tmux new-window -t test:{0} -n \"{1}\" 'tail -f \"{1}/verifier.log\"'\n",
-            window_index, verifier.id
-        );
-        file.write_all(command.as_bytes())?;
-        window_index += 1;
-    }
-
-    file.write_all("tmux select-window -t test:0\ntmux -2 attach-session -t test\n".as_ref())?;
-
-    Ok(())
+#[derive(Serialize)]
+pub struct TestResults {
+    round_results: Vec<RoundResults>,
 }
 
-/// The main method of the test, which runs the test. In the future
-/// this may accept command line arguments to configure how the test
-/// is run.
-pub fn run_integration_test(
+// TODO: add some kind of check that all specified rounds completed successfully.
+pub fn integration_test(
     options: &TestOptions,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<TestResults> {
     log_writer.set_no_out_file();
+
     tracing::info!("Running integration test with options:\n{:#?}", &options);
 
     // Perfom the clean action if required.
@@ -359,7 +340,7 @@ pub fn run_integration_test(
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
     let setup_build_output_dir = setup_dir.join("target/release");
-
+    let contributor_bin_path = setup_build_output_dir.join("setup1-contributor");
     let view_key_bin_path = setup_build_output_dir.join("view-key");
 
     // Create the verifiers, generate their keys.
@@ -367,6 +348,9 @@ pub fn run_integration_test(
         .into_iter()
         .map(|i| {
             let id = format!("verifier{}", i);
+            let span = tracing::error_span!("create", verifier = %id);
+            let _span_guard = span.enter();
+
             let view_key_path = keys_dir_path.join(format!("{}.key", id));
             generate_verifier_key(&view_key_bin_path, &view_key_path)?;
 
@@ -374,29 +358,141 @@ pub fn run_integration_test(
         })
         .collect::<eyre::Result<Vec<Verifier>>>()?;
 
-    let contributor_bin_path = setup_build_output_dir.join("setup1-contributor");
+    // Construct the configuration for each round.
+    let round_configs: Vec<RoundConfig> = options
+        .rounds
+        .iter()
+        .enumerate()
+        .map(|(round_index, round)| {
+            let round_number = (round_index + 1) as u64;
+            let span = tracing::error_span!("round_config", round = round_number);
+            let _span_guard = span.enter();
 
-    // Create the contributors, generate their keys.
-    let contributors: Vec<Contributor> = (1..=options.contributors)
-        .into_iter()
-        .map(|i| {
-            let id = format!("contributor{}", i);
-            let contributor_key_file_name = format!("{}-key.json", id);
-            let key_file = keys_dir_path.join(contributor_key_file_name);
+            if round.contributor_starts.len() > round.contributors as usize {
+                return Err(eyre::eyre!(
+                    "Invalid `contributor_starts` for round {}. Its length ({}) \
+                        should not exceed the number of contributors ({}).",
+                    round_number,
+                    round.contributor_starts.len(),
+                    round.contributors,
+                ));
+            }
 
-            let contributor_key = generate_contributor_key(&contributor_bin_path, &key_file)
-                .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
+            if round.contributor_drops.len() > round.contributors as usize {
+                return Err(eyre::eyre!(
+                    "Invalid `contributor_drops` for round {}. Its length ({}) \
+                        should not exceed the number of contributors ({}).",
+                    round_number,
+                    round.contributor_drops.len(),
+                    round.contributors,
+                ));
+            }
 
-            Ok(Contributor {
-                id,
-                key_file,
-                address: contributor_key.address,
+            // Create the contributors, generate their keys.
+            let contributors: Vec<Contributor> = (1..=round.contributors)
+                .into_iter()
+                .map(|i| {
+                    let id = format!("contributor{}-{}", round_number, i);
+                    let span = tracing::error_span!("create", contributor = %id);
+                    let _span_guard = span.enter();
+
+                    let contributor_key_file_name = format!("{}-key.json", id);
+                    let key_file = keys_dir_path.join(contributor_key_file_name);
+
+                    let contributor_key =
+                        generate_contributor_key(&contributor_bin_path, &key_file).wrap_err_with(
+                            || format!("Error generating contributor {} key.", id),
+                        )?;
+
+                    Ok(Contributor {
+                        id,
+                        key_file,
+                        address: contributor_key.address,
+                    })
+                })
+                .collect::<eyre::Result<Vec<Contributor>>>()?;
+
+            let contributor_drops: HashMap<ContributorRef, DropContributorConfig> = round
+                .contributor_drops
+                .iter()
+                .enumerate()
+                .map(|(i, drop_config)| {
+                    let contributor_ref: ContributorRef = contributors
+                        .get(i)
+                        .ok_or_else(|| {
+                            eyre::eyre!(
+                            "There is no contributor corresponding to the drop config at index {}",
+                            i
+                        )
+                        })?
+                        .as_contributor_ref();
+                    Ok((contributor_ref, drop_config.clone()))
+                })
+                .collect::<eyre::Result<HashMap<ContributorRef, DropContributorConfig>>>()?;
+
+            // Create the config for running each contributor.
+            let contributors = contributors
+                .iter()
+                .enumerate()
+                .map(|(i, contributor)| {
+                    // Run the `setup1-contributor`.
+                    let contributor_out_dir =
+                        create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
+                    let drop = contributor_drops
+                        .get(&contributor.as_contributor_ref())
+                        .cloned();
+
+                    // By default contributors start with RoundStart
+                    // unless specified in contributor_starts
+                    let start = round
+                        .contributor_starts
+                        .get(i)
+                        .cloned()
+                        .unwrap_or(ContributorStartConfig::RoundStart);
+
+                    match &start {
+                        ContributorStartConfig::CeremonyStart => {
+                            return Err(eyre::eyre!(
+                                "Invalid contributor_starts for round {}. {:?} \
+                                    is not a valid start config for a normal contributor.",
+                                round_number,
+                                start
+                            ))
+                        }
+                        _ => {}
+                    }
+
+                    Ok(ContributorConfig {
+                        id: contributor.id.clone(),
+                        contributor_ref: contributor.as_contributor_ref(),
+                        contributor_bin_path: contributor_bin_path.clone(),
+                        key_file_path: contributor.key_file.clone(),
+                        environment: options.environment,
+                        coordinator_api_url: COORDINATOR_API_URL.to_string(),
+                        out_dir: contributor_out_dir,
+                        drop,
+                        start,
+                    })
+                })
+                .zip(contributors.iter())
+                .map::<eyre::Result<(Contributor, ContributorConfig)>, _>(|pair| match pair.0 {
+                    Ok(config) => Ok((pair.1.clone(), config)),
+                    Err(error) => Err(error),
+                })
+                .collect::<eyre::Result<Vec<(Contributor, ContributorConfig)>>>()?;
+
+            Ok(RoundConfig {
+                round_number,
+                contributors,
+                contributor_drops,
+                verifiers: verifiers.clone(),
             })
         })
-        .collect::<eyre::Result<Vec<Contributor>>>()?;
+        .collect::<eyre::Result<Vec<RoundConfig>>>()?;
 
     // Create the replacement contributors, generate their keys.
-    let replacement_contributors: Vec<Contributor> = (1..=options.replacement_contributors)
+    let replacement_contributors: Vec<(Contributor, ContributorConfig)> = (1..=options
+        .replacement_contributors)
         .into_iter()
         .map(|i| {
             let id = format!("replacement_contributor{}", i);
@@ -406,17 +502,33 @@ pub fn run_integration_test(
             let contributor_key = generate_contributor_key(&contributor_bin_path, &key_file)
                 .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
 
-            Ok(Contributor {
-                id,
+            let contributor = Contributor {
+                id: id.clone(),
                 key_file,
                 address: contributor_key.address,
-            })
+            };
+
+            // Run the `setup1-contributor`.
+            let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&id))?;
+            let contributor_config = ContributorConfig {
+                id: id.clone(),
+                contributor_ref: contributor.as_contributor_ref(),
+                contributor_bin_path: contributor_bin_path.clone(),
+                key_file_path: contributor.key_file.clone(),
+                environment: options.environment,
+                coordinator_api_url: COORDINATOR_API_URL.to_string(),
+                out_dir: contributor_out_dir,
+                drop: None,
+                start: ContributorStartConfig::CeremonyStart,
+            };
+
+            Ok((contributor, contributor_config))
         })
-        .collect::<eyre::Result<Vec<Contributor>>>()?;
+        .collect::<eyre::Result<Vec<(Contributor, ContributorConfig)>>>()?;
 
     let replacement_contributor_refs: Vec<ContributorRef> = replacement_contributors
         .iter()
-        .map(|c| c.as_contributor_ref())
+        .map(|c| c.0.as_contributor_ref())
         .collect();
 
     let coordinator_config = CoordinatorConfig {
@@ -427,86 +539,25 @@ pub fn run_integration_test(
         replacement_contributors: replacement_contributor_refs,
     };
 
-    write_tail_logs_script(
-        &options.out_dir,
-        contributors.iter().chain(replacement_contributors.iter()),
-        &verifiers,
-    )?;
-
     // Create some mpmc channels for communicating between the various
     // components that run during the integration test.
     let bus: Bus<CeremonyMessage> = Bus::new(1000);
     let ceremony_tx = bus.broadcaster();
     let ceremony_rx = bus.subscribe();
 
+    let mut process_joins: Vec<Box<dyn MultiJoinable>> = Vec::new();
+
     let time_limit_join = options
-        .round_timout
+        .timout
         .map(|timeout| ceremony_time_limit(timeout, ceremony_rx.clone(), ceremony_tx.clone()));
-
-    let contributor_drops = options
-        .contributor_drops
-        .iter()
-        .enumerate()
-        .map(|(i, drop_config)| {
-            let contributor_ref: ContributorRef = contributors
-                .get(i)
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "There is no contributor corresponding to the drop config at index {}",
-                        i
-                    )
-                })?
-                .as_contributor_ref();
-            Ok((contributor_ref, drop_config.clone()))
-        })
-        .collect::<eyre::Result<HashMap<ContributorRef, DropContributorConfig>>>()?;
-
-    // Monitor the ceremony for dropped participants
-    let drops_config = MonitorDropsConfig {
-        contributor_drops: contributor_drops.clone(),
-    };
-    let monitor_drops_join = monitor_drops(drops_config, ceremony_rx.clone(), ceremony_tx.clone());
 
     // Construct MessageWaiters which wait for specific messages
     // during the ceremony before joining.
-    let coordinator_ready = MessageWaiter::spawn(
+    let coordinator_ready = MessageWaiter::spawn_expected(
         vec![CeremonyMessage::RoundWaitingForParticipants(1)],
-        CeremonyMessage::is_shutdown,
+        || Ok(()),
         ceremony_rx.clone(),
     );
-    let round1_started = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundStarted(1)],
-        CeremonyMessage::is_shutdown,
-        ceremony_rx.clone(),
-    );
-    let round1_aggregation_started = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundStartedAggregation(1)],
-        CeremonyMessage::is_shutdown,
-        ceremony_rx.clone(),
-    );
-    let round1_finished = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundFinished(1)],
-        CeremonyMessage::is_shutdown,
-        ceremony_rx.clone(),
-    );
-    let round1_aggregated = MessageWaiter::spawn(
-        vec![CeremonyMessage::RoundAggregated(1)],
-        CeremonyMessage::is_shutdown,
-        ceremony_rx.clone(),
-    );
-
-    let mut process_joins: Vec<Box<dyn MultiJoinable>> = Vec::new();
-
-    // Run the nodejs proxy server for the coordinator.
-    // let coordinator_proxy_out_dir =
-    //     create_dir_if_not_exists(options.out_dir.join("coordinator_proxy"))?;
-    // let coordinator_proxy_join = run_coordinator_proxy(
-    //     coordinator_dir,
-    //     ceremony_tx.clone(),
-    //     ceremony_rx.clone(),
-    //     coordinator_proxy_out_dir,
-    // )?;
-    // process_joins.push(Box::new(coordinator_proxy_join));
 
     // Run the coordinator.
     let coordinator_join = run_coordinator(
@@ -540,24 +591,14 @@ pub fn run_integration_test(
 
     tracing::info!("Coordinator started.");
 
-    // Run the contributors and replacement contributors.
-    for contributor in contributors.iter().chain(replacement_contributors.iter()) {
-        // Run the `setup1-contributor`.
-        let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&contributor.id))?;
-        let drop = contributor_drops
-            .get(&contributor.as_contributor_ref())
-            .cloned();
-        let contributor_config = ContributorConfig {
-            id: contributor.id.clone(),
-            contributor_ref: contributor.as_contributor_ref(),
-            contributor_bin_path: contributor_bin_path.clone(),
-            key_file_path: contributor.key_file.clone(),
-            environment: options.environment,
-            coordinator_api_url: COORDINATOR_API_URL.to_string(),
-            out_dir: contributor_out_dir,
-            drop,
-        };
+    if !replacement_contributors.is_empty() {
+        tracing::info!(
+            "Starting {} replacement contributors.",
+            replacement_contributors.len()
+        );
+    }
 
+    for (_, contributor_config) in replacement_contributors {
         let contributor_join =
             run_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
         process_joins.push(Box::new(contributor_join));
@@ -579,71 +620,18 @@ pub fn run_integration_test(
         process_joins.push(Box::new(verifier_join));
     }
 
-    let mut round_errors: Vec<eyre::Error> = Vec::new();
-
-    let round_start_time = std::time::Instant::now();
-
-    tracing::info!("Waiting for round 1 to start.");
-
-    match round1_started
-        .join()
-        .wrap_err("Error while waiting for round 1 to start")?
-    {
-        WaiterJoinCondition::Shutdown => {}
-        WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 has started!");
-
-            if let Err(error) =
-                check_participants_in_round(&coordinator_config, 1, &contributors, &verifiers)
-            {
-                ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
-                round_errors.push(error);
-            }
-        }
-    }
-
-    round1_aggregation_started
-        .join()
-        .wrap_err("Error while waiting for round aggregation 1 to start")?
-        .on_messages_received(|| {
-            tracing::info!(
-                "Round 1 contributions and verifications complete. Aggregation has started."
+    let round_results = round_configs
+        .into_iter()
+        .map(|round_config| {
+            test_round(
+                round_config,
+                &coordinator_config,
+                options,
+                &ceremony_tx,
+                &ceremony_rx,
             )
-        });
-
-    let aggregation_start_time = std::time::Instant::now();
-
-    let aggregation_duration = match round1_aggregated
-        .join()
-        .wrap_err("Error while waiting for round 1 to aggregate.")?
-    {
-        WaiterJoinCondition::Shutdown => None,
-        WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 Aggregated.");
-            let aggregation_duration = aggregation_start_time.elapsed();
-            tracing::info!(
-                "Aggregation time: {}",
-                format_duration(aggregation_duration.clone())
-            );
-            Some(aggregation_duration)
-        }
-    };
-
-    let total_round_duration = match round1_finished
-        .join()
-        .wrap_err("Error while waiting for round 1 to finish.")?
-    {
-        WaiterJoinCondition::Shutdown => None,
-        WaiterJoinCondition::MessagesReceived => {
-            tracing::info!("Round 1 Finished.");
-            let total_round_duration = round_start_time.elapsed();
-            tracing::info!(
-                "Total round time: {}",
-                format_duration(total_round_duration.clone())
-            );
-            Some(total_round_duration)
-        }
-    };
+        })
+        .collect::<eyre::Result<Vec<RoundResults>>>()?;
 
     // Tell the other threads to shutdown, safely terminating their
     // child processes.
@@ -651,10 +639,6 @@ pub fn run_integration_test(
 
     // Wait for threads to close after being told to shut down.
     join_multiple(process_joins).expect("Error while joining monitor threads.");
-
-    monitor_drops_join
-        .join()
-        .expect("Error while monitor drops thread")?;
 
     match time_limit_join {
         Some(handle) => {
@@ -664,13 +648,220 @@ pub fn run_integration_test(
                 .expect("error while joining time limit thread")
             {
                 tracing::error!("{:?}", error);
-                round_errors.push(error);
+                return Err(error);
             }
         }
         None => {}
     }
 
-    tracing::info!("All threads/processes joined, test complete!");
+    Ok(TestResults { round_results })
+}
+
+/// Configuration for running a round of the ceremony.
+pub struct RoundConfig {
+    /// The number of the round in the ceremony.
+    round_number: u64,
+    /// A vector of contributors and their configurations. New
+    /// contributor processes will be started for each of these.
+    contributors: Vec<(Contributor, ContributorConfig)>,
+    /// A map of contributor references to the relavent drop
+    /// configuration (if the contributor needs to be dropped during
+    /// this round).
+    contributor_drops: HashMap<ContributorRef, DropContributorConfig>,
+    /// A vector of verifiers participating in this round. It is
+    /// expected that the specified verifiers are already running.
+    verifiers: Vec<Verifier>,
+}
+
+/// Test an individual round of the ceremony. It is expected that the
+/// coordinator, verifiers and replacement contributors are already
+/// running before this function is called.
+fn test_round(
+    round_config: RoundConfig,
+    coordinator_config: &CoordinatorConfig,
+    options: &TestOptions,
+    ceremony_tx: &Sender<CeremonyMessage>,
+    ceremony_rx: &Receiver<CeremonyMessage>,
+) -> eyre::Result<RoundResults> {
+    let span = tracing::error_span!("test_round", round = round_config.round_number);
+    let _span_guard = span.enter();
+
+    let mut process_joins: Vec<Box<dyn MultiJoinable>> = Vec::new();
+
+    // Monitor the ceremony for dropped participants
+    let drops_config = MonitorDropsConfig {
+        contributor_drops: round_config.contributor_drops.clone(),
+    };
+    let monitor_drops_join = monitor_drops(drops_config, ceremony_rx.clone(), ceremony_tx.clone());
+
+    // Construct MessageWaiters which wait for specific messages
+    // during the ceremony before joining.
+    let round_started = MessageWaiter::spawn_expected(
+        vec![CeremonyMessage::RoundStarted(round_config.round_number)],
+        || Ok(()),
+        ceremony_rx.clone(),
+    );
+    let round_aggregation_started = MessageWaiter::spawn_expected(
+        vec![CeremonyMessage::RoundStartedAggregation(
+            round_config.round_number,
+        )],
+        || Ok(()),
+        ceremony_rx.clone(),
+    );
+    let round_finished = MessageWaiter::spawn_expected(
+        vec![CeremonyMessage::RoundFinished(round_config.round_number)],
+        || Ok(()),
+        ceremony_rx.clone(),
+    );
+    let round_aggregated = MessageWaiter::spawn_expected(
+        vec![CeremonyMessage::RoundAggregated(round_config.round_number)],
+        || Ok(()),
+        ceremony_rx.clone(),
+    );
+
+    // Run the contributors which are to be present at the start of
+    // the round.
+    let starting_contributors: Vec<Contributor> = round_config
+        .contributors
+        .iter()
+        .filter(
+            |(_contributor, contributor_config)| match contributor_config.start {
+                // We are only concerned with contributors which start
+                // at the start of the round.
+                ContributorStartConfig::RoundStart => true,
+                _ => false,
+            },
+        )
+        .map(|(contributor, contributor_config)| {
+            let contributor_join = run_contributor(
+                contributor_config.clone(),
+                ceremony_tx.clone(),
+                ceremony_rx.clone(),
+            )?;
+            process_joins.push(Box::new(contributor_join));
+            Ok(contributor.clone())
+        })
+        .collect::<eyre::Result<Vec<Contributor>>>()?;
+
+    // Configure/set-up the contributors which will join at some later
+    // point during the round.
+    let mid_round_contributor_joins: Vec<Box<dyn MultiJoinable>> = round_config
+        .contributors
+        .iter()
+        .filter_map(
+            |(_contributor, contributor_config)| match &contributor_config.start {
+                ContributorStartConfig::AfterContributions(start_config) => {
+                    let process_join = JoinLater::new();
+                    let waiter_process_join = process_join.clone();
+                    let waiter_ceremony_tx = ceremony_tx.clone();
+                    let waiter_ceremony_rx = ceremony_rx.clone();
+                    let this_contributor_config = contributor_config.clone();
+                    let waiter_join: Box<dyn MultiJoinable> = Box::new(spawn_contribution_waiter(
+                        start_config.after_contributions,
+                        move || {
+                            let contributor_join = run_contributor(
+                                this_contributor_config,
+                                waiter_ceremony_tx,
+                                waiter_ceremony_rx,
+                            )?;
+                            waiter_process_join.register(contributor_join);
+                            Ok(())
+                        },
+                        ceremony_rx.clone(),
+                    ));
+                    let process_join_boxed: Box<dyn MultiJoinable> = Box::new(process_join);
+                    let joins: Box<dyn MultiJoinable> =
+                        Box::new(JoinMultiple::new(vec![waiter_join, process_join_boxed]));
+                    Some(joins)
+                }
+                _ => None,
+            },
+        )
+        .collect::<Vec<Box<dyn MultiJoinable>>>();
+
+    let mut round_errors: Vec<eyre::Error> = Vec::new();
+
+    let round_start_time = std::time::Instant::now();
+
+    tracing::info!("Waiting for round to start.");
+
+    match round_started
+        .join()
+        .wrap_err("Error while waiting for round to start")?
+    {
+        WaiterJoinCondition::Shutdown => {}
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round has started!");
+
+            if let Err(error) = check_participants_in_round(
+                &coordinator_config,
+                round_config.round_number,
+                &starting_contributors,
+                &round_config.verifiers,
+            ) {
+                ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
+                round_errors.push(error);
+            }
+        }
+    }
+
+    round_aggregation_started
+        .join()
+        .wrap_err("Error while waiting for round aggregation to start")?
+        .on_messages_received(|| {
+            tracing::info!(
+                "Round contributions and verifications complete. Aggregation has started."
+            )
+        });
+
+    let aggregation_start_time = std::time::Instant::now();
+
+    let aggregation_duration = match round_aggregated
+        .join()
+        .wrap_err("Error while waiting for round to aggregate.")?
+    {
+        WaiterJoinCondition::Shutdown => None,
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round aggregated.");
+            let aggregation_duration = aggregation_start_time.elapsed();
+            tracing::info!(
+                "Aggregation time: {}",
+                format_duration(aggregation_duration.clone())
+            );
+            Some(aggregation_duration)
+        }
+    };
+
+    let total_round_duration = match round_finished
+        .join()
+        .wrap_err("Error while waiting for round to finish.")?
+    {
+        WaiterJoinCondition::Shutdown => None,
+        WaiterJoinCondition::MessagesReceived => {
+            tracing::info!("Round finished.");
+            let total_round_duration = round_start_time.elapsed();
+            tracing::info!(
+                "Total round time: {}",
+                format_duration(total_round_duration.clone())
+            );
+            Some(total_round_duration)
+        }
+    };
+
+    // Wait for threads to close after being told to shut down.
+    join_multiple(process_joins).expect("Error while joining process monitor threads.");
+    join_multiple(mid_round_contributor_joins)
+        .expect("Error while joining mid round contributor join threads");
+
+    tracing::debug!("Waiting for monitor_drops thread to join.");
+    monitor_drops_join
+        .join()
+        .expect("Error while monitor drops thread")?;
+
+    tracing::info!(
+        "All contributor threads/processes joined, test round {} complete!",
+        round_config.round_number
+    );
 
     if !round_errors.is_empty() {
         tracing::error!("Round completed with errors.");
@@ -680,10 +871,10 @@ pub fn run_integration_test(
 
         return Err(round_errors
             .pop()
-            .expect("expected one error to be present"));
+            .expect("expected at least one error to be present"));
     }
 
-    let results = TestResults {
+    let results = RoundResults {
         total_round_duration: total_round_duration
             .unwrap_or_else(|| std::time::Duration::from_secs(0)),
         aggregation_duration: aggregation_duration

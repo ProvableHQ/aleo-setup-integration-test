@@ -6,7 +6,7 @@ use eyre::Context;
 use mpmc_bus::{Receiver, Sender, TryRecvError};
 use subprocess::{Exec, Redirection};
 
-use crate::{CeremonyMessage, ShutdownReason};
+use crate::{join::MultiJoinable, CeremonyMessage, ShutdownReason};
 
 /// Returns `Ok` if the `exit_status` is `Exited(0)` or `Signaled(15)`
 /// (terminated by the host?), otherwise returns an `Err`.
@@ -56,21 +56,6 @@ impl MultiJoinable for MonitorProcessJoin {
     fn join(self: Box<Self>) -> std::thread::Result<()> {
         MonitorProcessJoin::join(*self)
     }
-}
-
-/// A thread joiner that can be joined using [join_multiple()].
-pub trait MultiJoinable: std::fmt::Debug {
-    fn join(self: Box<Self>) -> std::thread::Result<()>;
-}
-
-/// Join multiple [MonitorProcessJoin]s.
-#[tracing::instrument(level = "error", skip(joins))]
-pub fn join_multiple(mut joins: Vec<Box<dyn MultiJoinable>>) -> std::thread::Result<()> {
-    while let Some(join) = joins.pop() {
-        join.join()?;
-        tracing::debug!("Joins remaining: {:?}", joins);
-    }
-    Ok(())
 }
 
 /// Message to the [run_monitor_process()] messages thread from the

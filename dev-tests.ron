@@ -71,8 +71,6 @@
         (
             /// Id for the individual test.
             id: "1",
-            /// Number of contributor participants for the test.
-            contributors: 1,
             /// Number of verifier participants for the test.
             verifiers: 1,
             /// Number of replacement contributors for the test.
@@ -80,187 +78,254 @@
             /// What environment to use for the setup.
             /// Possible options: `development`, `inner`, `outer`, `universal`.
             environment: development,
-            /// Timout (in seconds) for running a ceremony round of the
-            /// integration test (not including setting up prerequisites). If
-            /// this time is exceeded for a given round, the test will fail.
-            round_timout: Some(18000),
             /// Whether to skip running this test.
             skip: false,
-            contributor_drops: [],
+            /// Configure the tests performed for each round of the ceremony.
+            rounds: [
+                (
+                    /// Number of contributor participants for this round of the
+                    /// ceremony.
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "2",
-            contributors: 1,
             verifiers: 1,
             replacement_contributors: 1,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            /// Configure expected contributor drops. A contributor is
-            /// assigned automatically to each specified config. The number of
-            /// configs should not exceed the number of contributors.
-            contributor_drops: [
+            rounds: [
                 (
-                    /// A contributor is dropped (process killed) after having made
-                    /// this number of contributions.
-                    after_contributions: 10,
+                    contributors: 1,
+                    /// Configure expected contributor drops. A contributor is
+                    /// assigned automatically to each specified config. The number of
+                    /// configs should not exceed the number of contributors.
+                    contributor_drops: [
+                        (
+                            /// A contributor is dropped (process killed) after having made
+                            /// this number of contributions.
+                            after_contributions: 10,
+                        ),
+                    ],
                 ),
             ],
         ),
         (
             id: "3",
-            contributors: 2,
             verifiers: 1,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "4",
-            contributors: 2,
             verifiers: 1,
             replacement_contributors: 1,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [
+            rounds: [
                 (
-                    after_contributions: 10,
+                    contributors: 2,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                    ],
                 ),
             ],
         ),
         (
             id: "5",
-            contributors: 2,
             verifiers: 1,
             replacement_contributors: 2,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [
+            rounds: [
                 (
-                    after_contributions: 10,
-                ),
-                (
-                    after_contributions: 15,
+                    contributors: 2,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                        (
+                            after_contributions: 15,
+                        ),
+                    ],
                 ),
             ],
         ),
         (
             id: "6",
-            contributors: 3,
             verifiers: 1,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
         (
             id: "7",
-            contributors: 3,
             verifiers: 1,
             replacement_contributors: 1,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [
+            rounds: [
                 (
-                    after_contributions: 10,
+                    contributors: 3,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                    ],
                 ),
             ],
         ),
         (
             id: "9",
-            contributors: 3,
             verifiers: 1,
             replacement_contributors: 3,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [
+            rounds: [
                 (
-                    after_contributions: 10,
-                ),
-                (
-                    after_contributions: 11,
-                ),
-                (
-                    after_contributions: 15,
+                    contributors: 3,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                        (
+                            after_contributions: 11,
+                        ),
+                        (
+                            after_contributions: 15,
+                        ),
+                    ],
                 ),
             ],
         ),
         (
             id: "10",
-            contributors: 4,
             verifiers: 1,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 4,
+                ),
+            ],
         ),
         (
             id: "15",
-            contributors: 5,
             verifiers: 1,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 5,
+                ),
+            ],
         ),
         (
             id: "21",
-            contributors: 1,
             verifiers: 2,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 1,
+                ),
+            ],
         ),
         (
             id: "23",
-            contributors: 2,
             verifiers: 2,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 2,
+                ),
+            ],
         ),
         (
             id: "26",
-            contributors: 3,
             verifiers: 2,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 3,
+                ),
+            ],
         ),
         (
             id: "30",
-            contributors: 4,
             verifiers: 2,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 4,
+                ),
+            ],
         ),
         (
             id: "35",
-            contributors: 5,
             verifiers: 2,
             replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [],
+            rounds: [
+                (
+                    contributors: 5,
+                ),
+            ],
+        ),
+        (
+            id: "36",
+            verifiers: 2,
+            replacement_contributors: 0,
+            environment: development,
+            timout: Some(18000),
+            skip: false,
+            /// Configure the tests performed for each round of the ceremony.
+            rounds: [
+                (
+                    contributors: 1
+                ),
+                (
+                    contributors: 1
+                ),
+            ],
         ),
     ],
 )

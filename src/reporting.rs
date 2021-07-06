@@ -68,6 +68,9 @@ impl LogFileWriter {
         }
     }
 
+    /// Stop logging to file, buffer log output in memory until
+    /// [Self::set_out_file()] is called again, where the output will
+    /// then be unbuffered to.
     pub fn set_no_out_file(&self) {
         let mut internal = self.internal.lock().expect("error obtaining lock");
         internal.file = None;

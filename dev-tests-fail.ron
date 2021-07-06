@@ -19,18 +19,22 @@
     tests: [
         (
             id: "8",
-            contributors: 3,
             verifiers: 1,
-            replacement_contributors: 2,
+            replacement_contributors: 0,
             environment: development,
-            round_timout: Some(18000),
+            timout: Some(18000),
             skip: false,
-            contributor_drops: [
+            rounds: [
                 (
-                    after_contributions: 10,
-                ),
-                (
-                    after_contributions: 11,
+                    contributors: 3,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                        (
+                            after_contributions: 11,
+                        ),
+                    ],
                 ),
             ],
         ),
