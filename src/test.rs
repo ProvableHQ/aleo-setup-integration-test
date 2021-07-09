@@ -79,9 +79,9 @@ pub fn default_aleo_setup_state_monitor() -> Repo {
 /// [StartAfterContributions::contributions] have been made in the
 /// current round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StartAfterContributions {
+pub struct StartAfterRoundContributions {
     /// See [StartAfterContributions].
-    after_contributions: u64,
+    after_round_contributions: u64,
 }
 
 /// The configuration for when a contributor will be started
@@ -95,7 +95,7 @@ pub enum ContributorStartConfig {
     /// participants to join.
     RoundStart,
     // See [StartAfterContributions].
-    AfterContributions(StartAfterContributions),
+    AfterRoundContributions(StartAfterRoundContributions),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -750,14 +750,14 @@ fn test_round(
         .iter()
         .filter_map(
             |(_contributor, contributor_config)| match &contributor_config.start {
-                ContributorStartConfig::AfterContributions(start_config) => {
+                ContributorStartConfig::AfterRoundContributions(start_config) => {
                     let process_join = JoinLater::new();
                     let waiter_process_join = process_join.clone();
                     let waiter_ceremony_tx = ceremony_tx.clone();
                     let waiter_ceremony_rx = ceremony_rx.clone();
                     let this_contributor_config = contributor_config.clone();
                     let waiter_join: Box<dyn MultiJoinable> = Box::new(spawn_contribution_waiter(
-                        start_config.after_contributions,
+                        start_config.after_round_contributions,
                         move || {
                             let contributor_join = run_contributor(
                                 this_contributor_config,
