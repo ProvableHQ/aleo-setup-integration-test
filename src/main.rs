@@ -4,7 +4,7 @@
 use aleo_setup_integration_test::{
     options::CmdOptions,
     reporting::{setup_reporting, LogFileWriter},
-    specification::run_test_specification,
+    specification::{run_test_specification, TestId},
 };
 
 use eyre::Context;
@@ -19,8 +19,13 @@ fn main() -> eyre::Result<()> {
 
     let options: CmdOptions = CmdOptions::from_args();
 
-    let result =
-        run_test_specification(&options.specification_file, &log_writer).wrap_err_with(|| {
+    let only_tests: Vec<TestId> = match &options.id {
+        Some(id) => vec![id.clone()],
+        None => Vec::new(),
+    };
+
+    let result = run_test_specification(&only_tests, &options.specification_file, &log_writer)
+        .wrap_err_with(|| {
             eyre::eyre!(
                 "Error while running tests specified in {:?}",
                 &options.specification_file

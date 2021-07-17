@@ -115,13 +115,15 @@ fn default_state_monitor_address() -> SocketAddr {
     SocketAddr::from_str("127.0.0.1:5001").unwrap()
 }
 
+pub type TestId = String;
+
 /// Options for each individual test in the [Specification]'s `tests`
 /// field.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct SingleTestOptions {
     /// Id for the individual test.
-    pub id: String,
+    pub id: TestId,
 
     /// Number of verifier participants for the test.
     pub verifiers: u8,
@@ -159,7 +161,12 @@ fn skip_default() -> bool {
 }
 
 /// Run multiple tests specified in the ron specification file.
+///
+/// If `only_tests` contains some values, only the test id's contained
+/// within this vector will be run. This will override the test's skip
+/// value.
 pub fn run_test_specification(
+    only_tests: &[TestId],
     specification_file: impl AsRef<Path>,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<()> {
@@ -198,11 +205,15 @@ pub fn run_test_specification(
         .tests
         .iter()
         .filter(|options| {
-            if options.skip {
-                tracing::info!("Skipping test {}", options.id);
-                false
+            if !only_tests.is_empty() {
+                only_tests.contains(&options.id)
             } else {
-                true
+                if options.skip {
+                    tracing::info!("Skipping test {}", options.id);
+                    false
+                } else {
+                    true
+                }
             }
         })
         .enumerate()

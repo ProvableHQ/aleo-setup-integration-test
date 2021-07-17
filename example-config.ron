@@ -102,8 +102,8 @@
                         // Start a ceremony participant after
                         // specified contributions have been made in
                         // the current round.
-                        AfterContributions((
-                            contributions: 5
+                        AfterRoundContributions((
+                            after_round_contributions: 5
                         ))
                     ]
                 ),
