@@ -327,5 +327,22 @@
                 ),
             ],
         ),
+        (
+            id: "37",
+            verifiers: 2,
+            replacement_contributors: 0,
+            environment: development,
+            timout: Some(18000),
+            skip: false,
+            /// Configure the tests performed for each round of the ceremony.
+            rounds: [
+                (
+                    contributors: 2
+                ),
+                (
+                    contributors: 2
+                ),
+            ],
+        ),
     ],
 )
