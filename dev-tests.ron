@@ -210,13 +210,14 @@
         (
             id: "9",
             verifiers: 1,
-            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
-            // and other problems with them.
-            replacement_contributors: 0,
-            // replacement_contributors: 3,
+            replacement_contributors: 3,
             environment: development,
             timout: Some(18000),
-            skip: false,
+            // Replacement contributors currently broken due to
+            // AleoHQ/aleo-setup#257 and other problems with them.
+            // Entire disabled because unable to complete round
+            // without any replacement contributors.
+            skip: true,
             rounds: [
                 (
                     contributors: 3,
