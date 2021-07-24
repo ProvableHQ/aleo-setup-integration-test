@@ -92,7 +92,7 @@
         (
             id: "2",
             verifiers: 1,
-            // Replacement contributors currently disabled due to #283 
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
             // and other problems with them.
             replacement_contributors: 0,
             // replacement_contributors: 1,
@@ -131,7 +131,7 @@
         (
             id: "4",
             verifiers: 1,
-            // Replacement contributors currently disabled due to #283 
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
             // and other problems with them.
             replacement_contributors: 0,
             // replacement_contributors: 1,
@@ -152,7 +152,7 @@
         (
             id: "5",
             verifiers: 1,
-            // Replacement contributors currently disabled due to #283 
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
             // and other problems with them.
             replacement_contributors: 0,
             // replacement_contributors: 2,
@@ -189,7 +189,7 @@
         (
             id: "7",
             verifiers: 1,
-            // Replacement contributors currently disabled due to #283 
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
             // and other problems with them.
             replacement_contributors: 0,
             // replacement_contributors: 1,
@@ -210,7 +210,7 @@
         (
             id: "9",
             verifiers: 1,
-            // Replacement contributors currently disabled due to #283 
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
             // and other problems with them.
             replacement_contributors: 0,
             // replacement_contributors: 3,
