@@ -251,7 +251,7 @@ pub fn run_test_specification(
                     clean: false,
                     build: false,
                     keep_repos: true,
-                    install_prerequisites: true,
+                    install_prerequisites: false,
                     replacement_contributors: options.replacement_contributors,
                     verifiers: options.verifiers,
                     out_dir,

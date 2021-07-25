@@ -92,7 +92,10 @@
         (
             id: "2",
             verifiers: 1,
-            replacement_contributors: 1,
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
+            // and other problems with them.
+            replacement_contributors: 0,
+            // replacement_contributors: 1,
             environment: development,
             timout: Some(18000),
             skip: false,
@@ -128,7 +131,10 @@
         (
             id: "4",
             verifiers: 1,
-            replacement_contributors: 1,
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
+            // and other problems with them.
+            replacement_contributors: 0,
+            // replacement_contributors: 1,
             environment: development,
             timout: Some(18000),
             skip: false,
@@ -146,7 +152,10 @@
         (
             id: "5",
             verifiers: 1,
-            replacement_contributors: 2,
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
+            // and other problems with them.
+            replacement_contributors: 0,
+            // replacement_contributors: 2,
             environment: development,
             timout: Some(18000),
             skip: false,
@@ -180,7 +189,10 @@
         (
             id: "7",
             verifiers: 1,
-            replacement_contributors: 1,
+            // Replacement contributors currently disabled due to AleoHQ/aleo-setup#257 
+            // and other problems with them.
+            replacement_contributors: 0,
+            // replacement_contributors: 1,
             environment: development,
             timout: Some(18000),
             skip: false,
@@ -201,7 +213,11 @@
             replacement_contributors: 3,
             environment: development,
             timout: Some(18000),
-            skip: false,
+            // Replacement contributors currently broken due to
+            // AleoHQ/aleo-setup#257 and other problems with them.
+            // Entire disabled because unable to complete round
+            // without any replacement contributors.
+            skip: true,
             rounds: [
                 (
                     contributors: 3,
