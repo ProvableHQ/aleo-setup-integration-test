@@ -291,7 +291,7 @@ pub fn integration_test(
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
 
     // Unfortunately aleo-setup still requires an old version of nightly to compile.
-    let rust_1_48 = RustToolchain::Specific("1.48".to_string());
+    let rust_1_53 = RustToolchain::Specific("1.53".to_string());
 
     // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(&options)?;
@@ -311,25 +311,25 @@ pub fn integration_test(
     if options.install_prerequisites {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
-        install_rust_toolchain(&rust_1_48)
-            .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_1_48))?;
+        install_rust_toolchain(&rust_1_53)
+            .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_1_53))?;
     }
 
     if options.build {
         // Build the setup coordinator Rust project.
-        build_rust_crate(coordinator_dir, &rust_1_48)
+        build_rust_crate(coordinator_dir, &rust_1_53)
             .wrap_err("error while building aleo-setup-coordinator crate")?;
 
         // Build the setup1-contributor Rust project.
-        build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_48)
+        build_rust_crate(setup_dir.join("setup1-contributor"), &rust_1_53)
             .wrap_err("error while building setup1-contributor crate")?;
 
         // Build the setup1-verifier Rust project.
-        build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_48)
+        build_rust_crate(setup_dir.join("setup1-verifier"), &rust_1_53)
             .wrap_err("error while building setup1-verifier crate")?;
 
         // Build the setup1-cli-tools Rust project.
-        build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_48)
+        build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_1_53)
             .wrap_err("error while building setup1-verifier crate")?;
 
         // Build the aleo-setup-state-monitor Rust project.
