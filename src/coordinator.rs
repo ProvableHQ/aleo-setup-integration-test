@@ -40,8 +40,8 @@ struct CoordinatorTomlConfiguration {
     /// TODO: refactor later to use a proper address type
     listen_address: SocketAddr,
 
-    /// TODO: is this actually in use??
-    database_address: SocketAddr,
+    /// Path to the SQLite db
+    sqlite_file: PathBuf,
 
     /// Settings related to reliability checks
     pub reliability_check: ReliabilityCheckSettings,
@@ -95,7 +95,7 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             setup: config.environment,
             replacement_contributors,
             listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
-            database_address: SocketAddr::from_str("127.0.0.1:2000").unwrap(),
+            sqlite_file: "setup.db3".into(),
             reliability_check: ReliabilityCheckSettings {
                 // TODO: update this when reliability checks are implemented.
                 is_enabled: false,
