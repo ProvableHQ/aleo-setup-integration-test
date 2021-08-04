@@ -22,7 +22,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     verifier::Verifier,
-    AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef,
+    AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef, ShutdownReason
 };
 
 /// The format of the configuration json configuration file, used with
@@ -223,6 +223,7 @@ lazy_static::lazy_static! {
     static ref ROUND_FINISHED_RE: Regex = Regex::new(".*Round (?P<round>[0-9]+) is finished.*").unwrap();
     static ref DROPPED_PARTICIPANT_RE: Regex = Regex::new(".*Dropping (?P<address>aleo[a-z0-9]+)[.](?P<participant_type>contributor|verifier) from the ceremony").unwrap();
     static ref SUCCESSFUL_CONTRIBUTION_RE: Regex = Regex::new(".*((?P<address>aleo[a-z0-9]+)[.]contributor) added a contribution to chunk (?P<chunk>[0-9]+)").unwrap();
+    static ref ROUND_RESTARTED_NO_CONTRIBUTORS_RE: Regex = Regex::new(".*No contributors remaining to reset and complete the current round. Rolling back to round 0 to wait and accept new participants.*").unwrap();
 }
 
 impl CoordinatorStateReporter {
@@ -309,6 +310,13 @@ impl CoordinatorStateReporter {
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::RoundStartedAggregation(round))?;
                     self.current_state = CoordinatorState::RoundAggregating(round);
+                }
+
+                if ROUND_RESTARTED_NO_CONTRIBUTORS_RE.is_match(&line) {
+                    tracing::debug!("Detected that round {} has restarted with no remaining contributors.", round);
+                    self.ceremony_tx
+                        .broadcast(CeremonyMessage::Shutdown(ShutdownReason::TestFinished))?;
+                    self.current_state = CoordinatorState::RoundFinished(round);
                 }
 
                 if let Some(captures) = SUCCESSFUL_CONTRIBUTION_RE.captures(line) {
