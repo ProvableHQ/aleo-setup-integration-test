@@ -37,14 +37,25 @@ struct CoordinatorTomlConfiguration {
     /// contributors which get dropped during a round.
     replacement_contributors: Vec<AleoPublicKey>,
 
-    /// TODO: refactor later to use a proper address type
     listen_address: SocketAddr,
 
     /// Path to the SQLite db
     sqlite_file: PathBuf,
 
+    /// To extend the Environment
+    environment_parameters: EnvironmentParameters,
+
     /// Settings related to reliability checks
-    pub reliability_check: ReliabilityCheckSettings,
+    reliability_check: ReliabilityCheckSettings,
+}
+
+/// Additional parameters to extend Environment
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EnvironmentParameters {
+    pub minimum_contributors_per_round: usize,
+    pub maximum_contributors_per_round: usize,
+    pub minimum_verifiers_per_round: usize,
+    pub maximum_verifiers_per_round: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -94,10 +105,15 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
         Self {
             setup: config.environment,
             replacement_contributors,
+            environment_parameters: EnvironmentParameters {
+                minimum_contributors_per_round: 1,
+                maximum_contributors_per_round: 5,
+                minimum_verifiers_per_round: 1,
+                maximum_verifiers_per_round: 5,
+            },
             listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
             sqlite_file: "setup.db3".into(),
             reliability_check: ReliabilityCheckSettings {
-                // TODO: update this when reliability checks are implemented.
                 is_enabled: false,
                 accept_threshold: NonZeroU8::new(8).unwrap(),
                 bandwidth: BandwidthCheckSettings {
