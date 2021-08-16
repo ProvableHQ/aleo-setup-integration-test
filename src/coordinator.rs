@@ -5,7 +5,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     net::SocketAddr,
-    num::{NonZeroU32, NonZeroU8},
+    num::{NonZeroU32, NonZeroU8, NonZeroU16, NonZeroU64},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -29,6 +29,11 @@ use crate::{
 /// the `--config` command line option for `aleo-setup-coordinator`.
 #[derive(Debug, Serialize)]
 struct CoordinatorTomlConfiguration {
+    listen_address: SocketAddr,
+
+    /// Path to the SQLite db
+    sqlite_file: PathBuf,
+
     /// The setup we are going to run.
     setup: Environment,
     /// The public keys e.g.
@@ -37,16 +42,26 @@ struct CoordinatorTomlConfiguration {
     /// contributors which get dropped during a round.
     replacement_contributors: Vec<AleoPublicKey>,
 
-    listen_address: SocketAddr,
-
-    /// Path to the SQLite db
-    sqlite_file: PathBuf,
+    /// The parameters to configure runtime
+    runtime_parameters: RuntimeParameters,
 
     /// To extend the Environment
     environment_parameters: EnvironmentParameters,
 
     /// Settings related to reliability checks
     reliability_check: ReliabilityCheckSettings,
+
+    /// Settings needed for the Twitter API.
+    twitter_settings: TwitterSettings,
+}
+
+/// The parameters to configure runtime
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RuntimeParameters {
+    pub web_server_cores: NonZeroU16,
+    pub operator_cores: NonZeroU16,
+    /// The delay between the calls to `operator.update()`, ms
+    pub operator_update_loop_delay: NonZeroU64,
 }
 
 /// Additional parameters to extend Environment
@@ -94,6 +109,16 @@ pub struct CpuCheckSettings {
     pub maximum_score: NonZeroU8,
 }
 
+/// Settings needed for the Twitter API.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TwitterSettings {
+    /// The consumer token for the Aleo Setup app.
+    pub consumer_token: String,
+
+    /// The consumer secret for the Aleo Setup app.
+    pub consumer_secret: String,
+}
+
 impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
     fn from(config: &CoordinatorConfig) -> Self {
         let replacement_contributors = config
@@ -103,16 +128,21 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             .collect();
 
         Self {
+            listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
+            sqlite_file: "setup.db3".into(),
             setup: config.environment,
             replacement_contributors,
+            runtime_parameters: RuntimeParameters {
+                web_server_cores: NonZeroU16::new(2).unwrap(),
+                operator_cores: NonZeroU16::new(30).unwrap(),
+                operator_update_loop_delay: NonZeroU64::new(10_000).unwrap(),
+            },
             environment_parameters: EnvironmentParameters {
                 minimum_contributors_per_round: 1,
                 maximum_contributors_per_round: 5,
                 minimum_verifiers_per_round: 1,
                 maximum_verifiers_per_round: 5,
             },
-            listen_address: SocketAddr::from_str("0.0.0.0:9000").unwrap(),
-            sqlite_file: "setup.db3".into(),
             reliability_check: ReliabilityCheckSettings {
                 is_enabled: false,
                 accept_threshold: NonZeroU8::new(8).unwrap(),
@@ -123,6 +153,10 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
                 cpu: CpuCheckSettings {
                     maximum_score: NonZeroU8::new(10).unwrap(),
                 },
+            },
+            twitter_settings: TwitterSettings {
+                consumer_token: "some_token".to_string(),
+                consumer_secret: "some_secret".to_string(),
             },
         }
     }
