@@ -1,6 +1,9 @@
 # Rust build directory
 /target
 
+# intellij configurations
+.idea
+
 # Integration test checked out repositories
 aleo-setup/
 aleo-setup-coordinator/
