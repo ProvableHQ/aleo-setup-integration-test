@@ -85,28 +85,16 @@ pub struct ReliabilityCheckSettings {
     /// to join the queue.
     pub accept_threshold: NonZeroU8,
 
-    /// Settings related to the bandwidth measurement
-    pub bandwidth: BandwidthCheckSettings,
+    pub maximum_score: u8,
 
-    /// Settings related to the cpu measurement
-    pub cpu: CpuCheckSettings,
-}
+    pub estimation_interval: u8,
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct BandwidthCheckSettings {
-    /// To convert the speed to score use the following formula:
-    /// score = speed / speed_per_point
-    /// for example: speed = 5000 kilobytes/s, speed_per_point = 1000 kilobytes/s, score = 5
-    /// Defined in kilobytes/s
-    pub speed_per_point: NonZeroU32,
-    /// The score is found as speed / speed_per_point, up to a maximum score
-    pub maximum_score: NonZeroU8,
-}
+    pub number_of_challenges: u8,
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CpuCheckSettings {
-    /// The score in CPU check can be at most maximum_score
-    pub maximum_score: NonZeroU8,
+    pub challenge_size: u64,
+
+    pub total_size: u8,
+    pub batch_size: u8,
 }
 
 /// Settings needed for the Twitter API.
@@ -146,13 +134,12 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             reliability_check: ReliabilityCheckSettings {
                 is_enabled: false,
                 accept_threshold: NonZeroU8::new(8).unwrap(),
-                bandwidth: BandwidthCheckSettings {
-                    speed_per_point: NonZeroU32::new(1000).unwrap(),
-                    maximum_score: NonZeroU8::new(10).unwrap(),
-                },
-                cpu: CpuCheckSettings {
-                    maximum_score: NonZeroU8::new(10).unwrap(),
-                },
+                maximum_score: 100,
+                estimation_interval: 60,
+                number_of_challenges: 10,
+                challenge_size: 6291456,
+                total_size: 11,
+                batch_size: 2,
             },
             twitter_settings: TwitterSettings {
                 consumer_token: "some_token".to_string(),
@@ -508,17 +495,6 @@ pub fn check_participants_in_round(
                     contributor.id_on_coordinator()
                 )
             })?;
-    }
-
-    // TODO: use the same logic as checking contributors, when I can
-    // calculate the verifier public key/coordinator id.
-    if verifiers.len() != state.verifier_ids.len() {
-        return Err(eyre::eyre!(
-            "Number of verifiers in the round {}, does not match \
-                the number of verifiers started for the round: {}",
-            state.verifier_ids.len(),
-            verifiers.len()
-        ));
     }
 
     Ok(())
