@@ -6,10 +6,8 @@ use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 use serde::Deserialize;
 
 use crate::{
-    test::{
-        default_aleo_setup, default_aleo_setup_coordinator, default_aleo_setup_state_monitor, Repo,
-        TestRound,
-    },
+    git::RemoteGitRepo,
+    test::{Repo, TestRound},
     Environment,
 };
 
@@ -69,25 +67,52 @@ pub struct Config {
     ///     dir: "../aleo-setup",
     /// ),
     /// ```
-    #[serde(default = "default_aleo_setup")]
+    #[serde(default = "default_aleo_setup_repo")]
     pub aleo_setup_repo: Repo,
 
     /// The code repository for the `aleo-setup-coordinator` project.
     ///
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
-    #[serde(default = "default_aleo_setup_coordinator")]
+    #[serde(default = "default_aleo_setup_coordinator_repo")]
     pub aleo_setup_coordinator_repo: Repo,
 
     /// The code repository for the `aleo-setup-state-monitor` project.
     ///
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
-    #[serde(default = "default_aleo_setup_state_monitor")]
-    pub aleo_setup_state_monitor_repo: Repo,
+    #[serde(default = "default_aleo_setup_state_monitor_repo")]
+    pub aleo_setup_state_monitor_repo: Option<Repo>,
 
     /// The address used for the `aleo-setup-state-monitor` web
     /// server. By default `127.0.0.1:5001`.
     #[serde(default = "default_state_monitor_address")]
     pub state_monitor_address: SocketAddr,
+}
+
+/// Default repository specification for the `aleo-setup` project.
+pub fn default_aleo_setup_repo() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup".into(),
+        url: "git@github.com:AleoHQ/aleo-setup.git".into(),
+        branch: "master".into(),
+    })
+}
+
+/// Default repository specification for the `aleo-setup-coordinator` project.
+pub fn default_aleo_setup_coordinator_repo() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup-coordinator".into(),
+        url: "https://github.com/AleoHQ/aleo-setup.git".into(),
+        branch: "main".into(),
+    })
+}
+
+/// Default repository specification for the `aleo-setup-state-monitor` project.
+pub fn default_aleo_setup_state_monitor_repo() -> Option<Repo> {
+    Some(Repo::Remote(RemoteGitRepo {
+        dir: "aleo-setup-state-monitor".into(),
+        url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git".into(),
+        branch: "include-build".into(), // branch to include build files so that npm is not required
+    }))
 }
 
 fn default_build() -> bool {
