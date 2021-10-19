@@ -38,7 +38,7 @@ fn main() -> eyre::Result<()> {
     };
 
     let config: Config = ron::from_str(&config_string)
-        .wrap_err_with(|| eyre::eyre!("Error while parsing specification ron file"))?;
+        .wrap_err_with(|| eyre::eyre!("Error while parsing configuration"))?;
 
     tracing::info!(
         "Running integration test using specification {:?}",
@@ -48,8 +48,13 @@ fn main() -> eyre::Result<()> {
     let specification_string = std::fs::read_to_string(&options.specification_file)
         .wrap_err_with(|| eyre::eyre!("Error while reading specification ron file"))?;
 
-    let specification: Specification = ron::from_str(&specification_string)
-        .wrap_err_with(|| eyre::eyre!("Error while parsing specification ron file"))?;
+    let specification: Specification =
+        ron::from_str(&specification_string).wrap_err_with(|| {
+            eyre::eyre!(
+                "Error while parsing test specification {:?}",
+                &options.specification_file
+            )
+        })?;
 
     let result = specification
         .run(&config, &only_tests, &log_writer)
