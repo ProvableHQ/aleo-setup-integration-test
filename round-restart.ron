@@ -1,0 +1,53 @@
+(
+    tests: [
+        (
+            id: "36",
+            verifiers: 2,
+            replacement_contributors: 0,
+            environment: development,
+            timout: Some(18000),
+            skip: false,
+            rounds: [
+                (
+                    contributors: 2,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            id: "37",
+            verifiers: 2,
+            replacement_contributors: 0,
+            environment: development,
+            timout: Some(18000),
+            skip: false,
+            rounds: [
+                (
+                    contributors: 2,
+                    contributor_drops: [
+                        (
+                            after_contributions: 10,
+                        ),
+                    ],
+                    contributor_starts: [
+                        // Contributor 1.
+                        // Start the contributor while the current round is waiting for
+                        // participants to join.
+                        RoundStart,
+                        // Contributor 2.
+                        // Start a ceremony participant after
+                        // specified contributions have been made in
+                        // the current round.
+                        AfterRoundContributions((
+                            after_round_contributions: 5
+                        ))
+                    ]
+                ),
+            ],
+        ),
+    ]
+)

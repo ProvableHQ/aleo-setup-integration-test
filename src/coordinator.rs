@@ -5,7 +5,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     net::SocketAddr,
-    num::{NonZeroU32, NonZeroU8, NonZeroU16, NonZeroU64},
+    num::{NonZeroU16, NonZeroU64, NonZeroU8, NonZeroUsize},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -22,7 +22,8 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     verifier::Verifier,
-    AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, VerifierRef, ShutdownReason
+    AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, ShutdownReason,
+    VerifierRef,
 };
 
 /// The format of the configuration json configuration file, used with
@@ -48,6 +49,9 @@ struct CoordinatorTomlConfiguration {
     /// To extend the Environment
     environment_parameters: EnvironmentParameters,
 
+    /// The settings related to the verifiers
+    verifier_settings: VerifierSettings,
+
     /// Settings related to reliability checks
     reliability_check: ReliabilityCheckSettings,
 
@@ -58,19 +62,33 @@ struct CoordinatorTomlConfiguration {
 /// The parameters to configure runtime
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RuntimeParameters {
-    pub web_server_cores: NonZeroU16,
-    pub operator_cores: NonZeroU16,
     /// The delay between the calls to `operator.update()`, ms
     pub operator_update_loop_delay: NonZeroU64,
+    /// Amount of threads to be used in aggregation
+    /// or similar CPU intensive operations
+    pub rayon_global_pool_threads: NonZeroU16,
 }
 
 /// Additional parameters to extend Environment
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EnvironmentParameters {
-    pub minimum_contributors_per_round: usize,
-    pub maximum_contributors_per_round: usize,
-    pub minimum_verifiers_per_round: usize,
-    pub maximum_verifiers_per_round: usize,
+    pub minimum_contributors_per_round: NonZeroUsize,
+    pub maximum_contributors_per_round: NonZeroUsize,
+    /// Timeout as measured in seconds
+    pub contributor_seen_timeout: i64,
+    /// Timeout as measured in seconds
+    pub participant_lock_timeout: i64,
+    /// Timeout as measured in seconds
+    pub queue_seen_timeout: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct VerifierSettings {
+    /// The time which verifiers will have to complete
+    /// the task before it gets deleted from the cache.
+    pub assigned_tasks_cache_ttl: NonZeroU64,
+    /// Maximum number of records in the cache
+    pub assigned_tasks_cache_records_cap: NonZeroUsize,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -121,15 +139,19 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
             setup: config.environment,
             replacement_contributors,
             runtime_parameters: RuntimeParameters {
-                web_server_cores: NonZeroU16::new(2).unwrap(),
-                operator_cores: NonZeroU16::new(30).unwrap(),
                 operator_update_loop_delay: NonZeroU64::new(10_000).unwrap(),
+                rayon_global_pool_threads: NonZeroU16::new(30).unwrap(),
             },
             environment_parameters: EnvironmentParameters {
-                minimum_contributors_per_round: 1,
-                maximum_contributors_per_round: 5,
-                minimum_verifiers_per_round: 1,
-                maximum_verifiers_per_round: 5,
+                minimum_contributors_per_round: NonZeroUsize::new(1).unwrap(),
+                maximum_contributors_per_round: NonZeroUsize::new(5).unwrap(),
+                contributor_seen_timeout: 3600,
+                participant_lock_timeout: 900,
+                queue_seen_timeout: 3600,
+            },
+            verifier_settings: VerifierSettings {
+                assigned_tasks_cache_ttl: NonZeroU64::new(60).unwrap(),
+                assigned_tasks_cache_records_cap: NonZeroUsize::new(1000).unwrap(),
             },
             reliability_check: ReliabilityCheckSettings {
                 is_enabled: false,
@@ -350,7 +372,10 @@ impl CoordinatorStateReporter {
                 }
 
                 if ROUND_RESTARTED_NO_CONTRIBUTORS_RE.is_match(&line) {
-                    tracing::debug!("Detected that round {} has restarted with no remaining contributors.", round);
+                    tracing::debug!(
+                        "Detected that round {} has restarted with no remaining contributors.",
+                        round
+                    );
                     self.ceremony_tx
                         .broadcast(CeremonyMessage::Shutdown(ShutdownReason::TestFinished))?;
                     self.current_state = CoordinatorState::RoundFinished(round);

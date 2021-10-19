@@ -310,8 +310,9 @@ pub fn integration_test(
     if options.install_prerequisites {
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
-        install_rust_toolchain(&rust_stable)
-            .wrap_err_with(|| eyre::eyre!("error while installing rust toolchain {}", rust_stable))?;
+        install_rust_toolchain(&rust_stable).wrap_err_with(|| {
+            eyre::eyre!("error while installing rust toolchain {}", rust_stable)
+        })?;
     }
 
     if options.build {
