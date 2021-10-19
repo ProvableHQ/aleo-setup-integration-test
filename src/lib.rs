@@ -4,6 +4,7 @@ use waiter::IsShutdownMessage;
 use std::{fmt::Display, str::FromStr};
 
 pub mod ceremony_waiter;
+pub mod config;
 pub mod contributor;
 pub mod coordinator;
 pub mod drop_participant;

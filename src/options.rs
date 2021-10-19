@@ -16,8 +16,11 @@ use crate::specification::TestId;
     about = "An integration test for the aleo-setup and aleo-setup-coordinator repositories."
 )]
 pub struct CmdOptions {
-    /// ron file specifying the test options.
+    /// ron file specifying the tests.
     pub specification_file: PathBuf,
+    /// ron file specifying the configuration for running the tests.
+    #[structopt(long = "config")]
+    pub config_file: Option<PathBuf>,
     /// Test with only a specific test id contained within the
     /// specification file.
     #[structopt(long = "id")]
