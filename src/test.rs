@@ -276,7 +276,7 @@ pub fn integration_test(
     let rust_stable = RustToolchain::Stable;
 
     // Attempt to clone the git repos if they don't already exist.
-    clone_git_repos(&options)?;
+    clone_git_repos(options)?;
 
     let coordinator_dir = options.aleo_setup_coordinator_repo.dir();
     let coordinator_bin_path = coordinator_dir
@@ -430,16 +430,13 @@ pub fn integration_test(
                         .cloned()
                         .unwrap_or(ContributorStartConfig::RoundStart);
 
-                    match &start {
-                        ContributorStartConfig::CeremonyStart => {
-                            return Err(eyre::eyre!(
-                                "Invalid contributor_starts for round {}. {:?} \
-                                    is not a valid start config for a normal contributor.",
-                                round_number,
-                                start
-                            ))
-                        }
-                        _ => {}
+                    if let ContributorStartConfig::CeremonyStart = &start {
+                        return Err(eyre::eyre!(
+                            "Invalid contributor_starts for round {}. {:?} \
+                                is not a valid start config for a normal contributor.",
+                            round_number,
+                            start
+                        ));
                     }
 
                     Ok(ContributorConfig {
@@ -491,7 +488,7 @@ pub fn integration_test(
             // Run the `setup1-contributor`.
             let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&id))?;
             let contributor_config = ContributorConfig {
-                id: id.clone(),
+                id,
                 contributor_ref: contributor.as_contributor_ref(),
                 contributor_bin_path: contributor_bin_path.clone(),
                 key_file_path: contributor.key_file.clone(),
@@ -553,7 +550,7 @@ pub fn integration_test(
             state_monitor_bin: state_monitor_bin_path(state_monitor_options.repo.dir()),
             transcript_dir: coordinator_config.transcript_dir(),
             out_dir: options.out_dir.clone(),
-            address: state_monitor_options.address.clone(),
+            address: state_monitor_options.address,
         };
 
         let state_monitor_join = run_state_monitor(
@@ -620,18 +617,15 @@ pub fn integration_test(
     // Wait for threads to close after being told to shut down.
     join_multiple(process_joins).expect("Error while joining monitor threads.");
 
-    match time_limit_join {
-        Some(handle) => {
-            tracing::debug!("Waiting for time limit to join");
-            if let Err(error) = handle
-                .join()
-                .expect("error while joining time limit thread")
-            {
-                tracing::error!("{:?}", error);
-                return Err(error);
-            }
+    if let Some(handle) = time_limit_join {
+        tracing::debug!("Waiting for time limit to join");
+        if let Err(error) = handle
+            .join()
+            .expect("error while joining time limit thread")
+        {
+            tracing::error!("{:?}", error);
+            return Err(error);
         }
-        None => {}
     }
 
     Ok(TestResults { round_results })
@@ -704,14 +698,9 @@ fn test_round(
     let starting_contributors: Vec<Contributor> = round_config
         .contributors
         .iter()
-        .filter(
-            |(_contributor, contributor_config)| match contributor_config.start {
-                // We are only concerned with contributors which start
-                // at the start of the round.
-                ContributorStartConfig::RoundStart => true,
-                _ => false,
-            },
-        )
+        .filter(|(_contributor, contributor_config)| {
+            matches!(contributor_config.start, ContributorStartConfig::RoundStart)
+        })
         .map(|(contributor, contributor_config)| {
             let contributor_join = run_contributor(
                 contributor_config.clone(),
@@ -774,7 +763,7 @@ fn test_round(
             tracing::info!("Round has started!");
 
             if let Err(error) = check_participants_in_round(
-                &coordinator_config,
+                coordinator_config,
                 round_config.round_number,
                 &starting_contributors,
                 &round_config.verifiers,
@@ -806,7 +795,7 @@ fn test_round(
             let aggregation_duration = aggregation_start_time.elapsed();
             tracing::info!(
                 "Aggregation time: {}",
-                format_duration(aggregation_duration.clone())
+                format_duration(aggregation_duration)
             );
             Some(aggregation_duration)
         }
@@ -822,7 +811,7 @@ fn test_round(
             let total_round_duration = round_start_time.elapsed();
             tracing::info!(
                 "Total round time: {}",
-                format_duration(total_round_duration.clone())
+                format_duration(total_round_duration)
             );
             Some(total_round_duration)
         }

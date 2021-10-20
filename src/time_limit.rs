@@ -16,7 +16,7 @@ pub fn ceremony_time_limit(
     mut ceremony_rx: Receiver<CeremonyMessage>,
     ceremony_tx: Sender<CeremonyMessage>,
 ) -> JoinHandle<eyre::Result<()>> {
-    let duration_formatted = format_duration(duration.clone());
+    let duration_formatted = format_duration(duration);
     let span = tracing::error_span!("time_limit", duration=%&duration_formatted);
 
     std::thread::spawn(move || {
@@ -37,13 +37,12 @@ pub fn ceremony_time_limit(
             }
 
             match ceremony_rx.try_recv() {
-                Ok(message) => match message {
-                    CeremonyMessage::Shutdown(_) => {
+                Ok(message) => {
+                    if let CeremonyMessage::Shutdown(_) = message {
                         tracing::info!("Thread terminated gracefully");
                         return Ok(());
                     }
-                    _ => {}
-                },
+                }
                 Err(TryRecvError::Disconnected) => {
                     panic!("`ceremony_rx` disconnected");
                 }

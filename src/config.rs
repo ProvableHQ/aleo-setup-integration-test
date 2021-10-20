@@ -91,11 +91,11 @@ pub struct StateMonitorConfig {
     pub address: SocketAddr,
 }
 
-impl Into<StateMonitorOptions> for StateMonitorConfig {
-    fn into(self) -> StateMonitorOptions {
-        StateMonitorOptions {
-            repo: self.repo,
-            address: self.address,
+impl From<StateMonitorConfig> for StateMonitorOptions {
+    fn from(config: StateMonitorConfig) -> Self {
+        Self {
+            repo: config.repo,
+            address: config.address,
         }
     }
 }

@@ -142,12 +142,11 @@ where
             }
 
             match ceremony_rx.try_recv() {
-                Ok(message) => match message {
-                    CeremonyMessage::Shutdown(_) => {
+                Ok(message) => {
+                    if let CeremonyMessage::Shutdown(_) = message {
                         terminate_process = true;
                     }
-                    _ => {}
-                },
+                }
                 Err(TryRecvError::Disconnected) => {
                     panic!("`ceremony_rx` disconnected");
                 }
@@ -167,7 +166,7 @@ where
                         panic!("Error while running process: {}", error);
                     }
                 }
-            } else if terminate_process == true {
+            } else if terminate_process {
                 // This will send SIGTERM until the shutdown is
                 // detected in process.poll(), just in case the
                 // process has bad signal handling qualities.

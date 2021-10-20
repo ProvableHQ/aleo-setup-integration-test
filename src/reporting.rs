@@ -61,6 +61,12 @@ pub struct LogFileWriter {
     internal: Arc<Mutex<LogFileWriterInternal>>,
 }
 
+impl Default for LogFileWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogFileWriter {
     pub fn new() -> Self {
         LogFileWriter {
@@ -172,6 +178,6 @@ mod test {
         let log_string = std::fs::read_to_string(&out_file).unwrap();
         assert_eq!(101, log_string.len());
 
-        println!("");
+        println!();
     }
 }

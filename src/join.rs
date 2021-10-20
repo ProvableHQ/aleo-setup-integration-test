@@ -38,6 +38,12 @@ pub struct JoinLater {
     join: Arc<Mutex<Option<Box<dyn MultiJoinable + Send + 'static>>>>,
 }
 
+impl Default for JoinLater {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JoinLater {
     pub fn new() -> Self {
         Self {
