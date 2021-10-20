@@ -107,10 +107,7 @@ pub enum CeremonyMessage {
 
 impl IsShutdownMessage for CeremonyMessage {
     fn is_shutdown_message(&self) -> bool {
-        match self {
-            Self::Shutdown(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Shutdown(_))
     }
 }
 

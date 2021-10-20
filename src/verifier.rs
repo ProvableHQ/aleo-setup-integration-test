@@ -47,7 +47,7 @@ pub fn generate_verifier_key(
 
     let view_key_out = capture.stdout_str();
     let view_key = view_key_out
-        .split("\n")
+        .split('\n')
         .next()
         .expect("Expected to be able to split view key output with \\n");
 
@@ -92,7 +92,7 @@ pub fn run_verifier(
         .cwd(&out_dir)
         .env("RUST_LOG", "debug,hyper=warn")
         .env("RUST_BACKTRACE", "1")
-        .args(&["--api-url", &coordinator_api_url])
+        .args(&["--api-url", coordinator_api_url])
         .arg("--view-key")
         .arg(view_key_path);
 
@@ -130,8 +130,8 @@ fn verifier_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::Resu
         match line_result {
             Ok(line) => {
                 // Write to log file.
-                log_file.write(line.as_ref())?;
-                log_file.write("\n".as_ref())?;
+                log_file.write_all(line.as_ref())?;
+                log_file.write_all("\n".as_ref())?;
             }
             Err(error) => tracing::error!(
                 "Error reading line from pipe to coordinator process: {}",

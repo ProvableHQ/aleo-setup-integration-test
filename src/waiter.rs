@@ -142,7 +142,7 @@ where
         J: FnOnce() -> eyre::Result<()> + Send + 'static,
     {
         Self::spawn(
-            move |message, state| Self::vec_waiter(message, state),
+            Self::vec_waiter,
             on_messages_received,
             expected_messages,
             rx,

@@ -81,7 +81,7 @@ impl Specification {
         only_tests: &[TestId],
         log_writer: &LogFileWriter,
     ) -> eyre::Result<()> {
-        if self.tests.len() == 0 {
+        if self.tests.is_empty() {
             return Err(eyre::eyre!(
                 "Expected at least one test to be defined in the specification file."
             ));
@@ -107,13 +107,11 @@ impl Specification {
             .filter(|options| {
                 if !only_tests.is_empty() {
                     only_tests.contains(&options.id)
+                } else if options.skip {
+                    tracing::info!("Skipping test {}", options.id);
+                    false
                 } else {
-                    if options.skip {
-                        tracing::info!("Skipping test {}", options.id);
-                        false
-                    } else {
-                        true
-                    }
+                    true
                 }
             })
             .enumerate()

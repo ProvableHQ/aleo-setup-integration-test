@@ -24,12 +24,12 @@ where
     MessageWaiter::spawn(
         move |message, mut state| {
             let _guard = span.enter();
-            match message {
-                CeremonyMessage::SuccessfulContribution {
-                    contributor: _,
-                    chunk: _,
-                } => state.contributions += 1,
-                _ => {}
+            if let CeremonyMessage::SuccessfulContribution {
+                contributor: _,
+                chunk: _,
+            } = message
+            {
+                state.contributions += 1
             }
 
             if state.contributions >= after_contributions {

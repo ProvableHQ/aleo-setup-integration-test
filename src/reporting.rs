@@ -32,7 +32,7 @@ impl LogFileWriterInternal {
 
 impl Write for LogFileWriterInternal {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        std::io::stdout().write(buf)?;
+        std::io::stdout().write_all(buf)?;
 
         if let Some(file) = &mut self.file {
             file.write(buf)
@@ -59,6 +59,12 @@ impl Write for LogFileWriterInternal {
 #[derive(Clone, Debug)]
 pub struct LogFileWriter {
     internal: Arc<Mutex<LogFileWriterInternal>>,
+}
+
+impl Default for LogFileWriter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LogFileWriter {
@@ -172,6 +178,6 @@ mod test {
         let log_string = std::fs::read_to_string(&out_file).unwrap();
         assert_eq!(101, log_string.len());
 
-        println!("");
+        println!();
     }
 }

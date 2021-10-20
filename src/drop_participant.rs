@@ -50,18 +50,15 @@ pub fn monitor_drops(
                     break;
                 }
                 CeremonyMessage::ParticipantDropped(participant) => {
-                    match &participant {
-                        ParticipantRef::Contributor(contributor) => {
-                            if let Some(_drop_config) = contributor_drops.remove(&contributor) {
-                                tracing::info!(
-                                    "Participant {:?} dropped during the round (as expected).",
-                                    &participant
-                                );
-                                continue;
-                                // TODO: check that participant was dropped after the correct number of contributions.
-                            }
+                    if let ParticipantRef::Contributor(contributor) = &participant {
+                        if let Some(_drop_config) = contributor_drops.remove(contributor) {
+                            tracing::info!(
+                                "Participant {:?} dropped during the round (as expected).",
+                                &participant
+                            );
+                            continue;
+                            // TODO: check that participant was dropped after the correct number of contributions.
                         }
-                        _ => {}
                     }
 
                     ceremony_tx.broadcast(CeremonyMessage::Shutdown(ShutdownReason::Error))?;
