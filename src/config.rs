@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::{
     git::RemoteGitRepo,
-    test::{Repo, TestRound},
+    test::{Repo, StateMonitorOptions, TestRound},
     Environment,
 };
 
@@ -41,7 +41,8 @@ pub struct Config {
     /// Whether to run the `aleo-setup-state-monitor` application.
     /// Requires `python3` and `pip` to be installed. Only supported
     /// on Linux.
-    pub state_monitor: bool,
+    #[serde(default = "default_state_monitor")]
+    pub state_monitor: Option<StateMonitorConfig>,
 
     /// Path to where the log files, key files and transcripts are stored.
     pub out_dir: PathBuf,
@@ -75,20 +76,40 @@ pub struct Config {
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
     #[serde(default = "default_aleo_setup_coordinator_repo")]
     pub aleo_setup_coordinator_repo: Repo,
+}
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct StateMonitorConfig {
     /// The code repository for the `aleo-setup-state-monitor` project.
     ///
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
     #[serde(default = "default_aleo_setup_state_monitor_repo")]
-    pub aleo_setup_state_monitor_repo: Option<Repo>,
-
+    pub repo: Repo,
     /// The address used for the `aleo-setup-state-monitor` web
     /// server. By default `127.0.0.1:5001`.
     #[serde(default = "default_state_monitor_address")]
-    pub state_monitor_address: SocketAddr,
+    pub address: SocketAddr,
 }
 
-/// Default repository specification for the `aleo-setup` project.
+impl Into<StateMonitorOptions> for StateMonitorConfig {
+    fn into(self) -> StateMonitorOptions {
+        StateMonitorOptions {
+            repo: self.repo,
+            address: self.address,
+        }
+    }
+}
+
+impl Default for StateMonitorConfig {
+    fn default() -> Self {
+        Self {
+            repo: default_aleo_setup_state_monitor_repo(),
+            address: default_state_monitor_address(),
+        }
+    }
+}
+
+/// Default value for [Config::aleo_setup_repo].
 pub fn default_aleo_setup_repo() -> Repo {
     Repo::Remote(RemoteGitRepo {
         dir: "aleo-setup".into(),
@@ -97,7 +118,7 @@ pub fn default_aleo_setup_repo() -> Repo {
     })
 }
 
-/// Default repository specification for the `aleo-setup-coordinator` project.
+/// Default value for [Config::aleo_setup_coordinator_repo].
 pub fn default_aleo_setup_coordinator_repo() -> Repo {
     Repo::Remote(RemoteGitRepo {
         dir: "aleo-setup-coordinator".into(),
@@ -106,23 +127,31 @@ pub fn default_aleo_setup_coordinator_repo() -> Repo {
     })
 }
 
-/// Default repository specification for the `aleo-setup-state-monitor` project.
-pub fn default_aleo_setup_state_monitor_repo() -> Option<Repo> {
-    Some(Repo::Remote(RemoteGitRepo {
+/// Default value for [Config::state_monitor].
+pub fn default_state_monitor() -> Option<StateMonitorConfig> {
+    Some(Default::default())
+}
+
+/// Default value for [Config::aleo_setup_state_monitor_repo].
+pub fn default_aleo_setup_state_monitor_repo() -> Repo {
+    Repo::Remote(RemoteGitRepo {
         dir: "aleo-setup-state-monitor".into(),
         url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git".into(),
         branch: "include-build".into(), // branch to include build files so that npm is not required
-    }))
+    })
 }
 
+/// Default value for [Config::build].
 fn default_build() -> bool {
     true
 }
 
+/// Default value for [Config::install_prerequisites].
 fn default_install_prerequisites() -> bool {
     true
 }
 
+/// Default value for [Config::state_monitor_address].
 fn default_state_monitor_address() -> SocketAddr {
     SocketAddr::from_str("127.0.0.1:5001").unwrap()
 }
@@ -176,11 +205,11 @@ fn skip_default() -> bool {
 mod test {
     use super::Config;
 
-    /// Test deserializing `example-config.ron` to [Specification].
+    /// Test deserializing `default-config.ron` to [Specification].
     #[test]
-    fn test_deserialize_example() {
-        let example_string = std::fs::read_to_string("example-config.ron")
-            .expect("Error while reading example-config.ron file");
+    fn test_deserialize_default() {
+        let example_string = std::fs::read_to_string("default-config.ron")
+            .expect("Error while reading default-config.ron file");
         let _example: Config =
             ron::from_str(&example_string).expect("Error while deserializing example-config.ron");
     }

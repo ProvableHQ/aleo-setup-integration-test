@@ -12,10 +12,6 @@
     // `true`. Setting this to `false` makes the test faster for
     // development purposes.
     install_prerequisites: true,
-    // Whether to run the `aleo-setup-state-monitor` application.
-    // Requires `python3` and `pip` to be installed. Only supported
-    // on Linux.
-    state_monitor: true,
     // Path to where the log files, key files and transcripts are
     // stored.
     out_dir: "out",
@@ -54,15 +50,20 @@
         url: "git@github.com:AleoHQ/aleo-setup-coordinator.git",
         branch: "main",
     ),
-    // The code repository for the `aleo-setup-state-monitor`
-    // project.  Checking out a remote repository.
-    aleo_setup_state_monitor_repo: (
-        type: "Remote",
-        dir: "aleo-setup-state-monitor",
-        url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git",
-        branch: "include-build",
-    ),
-    // The address used for the `aleo-setup-state-monitor` web
-    // server. By default `127.0.0.1:5001`.
-    state_monitor_address: "127.0.0.1:5001",
+    // Whether to run the `aleo-setup-state-monitor` application.
+    // Requires `python3` and `pip` to be installed. Only supported
+    // on Linux.
+    state_monitor: Some((
+        // The code repository for the `aleo-setup-state-monitor`
+        // project.  Checking out a remote repository.
+        repo: (
+            type: "Remote",
+            dir: "aleo-setup-state-monitor",
+            url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git",
+            branch: "include-build",
+        ),
+        // The address used for the `aleo-setup-state-monitor` web
+        // server. By default `127.0.0.1:5001`.
+        address: "127.0.0.1:5001",
+    )),
 )

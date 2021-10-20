@@ -136,13 +136,11 @@ impl Specification {
                         verifiers: options.verifiers,
                         out_dir,
                         environment: options.environment,
-                        state_monitor: config.state_monitor,
+                        state_monitor: config.state_monitor.clone().map(Into::into),
                         timout: options.timout.map(Duration::from_secs),
                         aleo_setup_repo: config.aleo_setup_repo.clone(),
                         aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
-                        aleo_setup_state_monitor_repo: config.aleo_setup_state_monitor_repo.clone(),
                         rounds: options.rounds.clone(),
-                        state_monitor_address: config.state_monitor_address.clone(),
                     }
                 } else {
                     TestOptions {
@@ -154,13 +152,11 @@ impl Specification {
                         verifiers: options.verifiers,
                         out_dir,
                         environment: options.environment,
-                        state_monitor: config.state_monitor,
+                        state_monitor: config.state_monitor.clone().map(Into::into),
                         timout: options.timout.map(Duration::from_secs),
                         aleo_setup_repo: config.aleo_setup_repo.clone(),
                         aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
-                        aleo_setup_state_monitor_repo: config.aleo_setup_state_monitor_repo.clone(),
                         rounds: options.rounds.clone(),
-                        state_monitor_address: config.state_monitor_address.clone(),
                     }
                 };
 

@@ -145,7 +145,7 @@ pub struct TestOptions {
     /// Whether to run the `aleo-setup-state-monitor` application.
     /// Requires `python3` and `pip` to be installed. Only supported
     /// on Linux.
-    pub state_monitor: bool,
+    pub state_monitor: Option<StateMonitorOptions>,
 
     /// Timout for this individual integration test (not including
     /// setting up prerequisites). If this time is exceeded, the test
@@ -158,15 +158,18 @@ pub struct TestOptions {
     /// The code repository for the `aleo-setup-coordinator` project.
     pub aleo_setup_coordinator_repo: Repo,
 
-    /// The code repository for the `aleo-setup-state-monitor` project.
-    pub aleo_setup_state_monitor_repo: Option<Repo>,
-
-    /// The address used for the `aleo-setup-state-monitor` web
-    /// server.
-    pub state_monitor_address: SocketAddr,
-
     /// Configuration for each round of the ceremony that will be tested.
     pub rounds: Vec<TestRound>,
+}
+
+/// Options for running the `aleo-setup-state-monitor`
+#[derive(Debug, Serialize)]
+pub struct StateMonitorOptions {
+    /// The code repository for the `aleo-setup-state-monitor` project.
+    pub repo: Repo,
+    /// The address used for the `aleo-setup-state-monitor` web
+    /// server.
+    pub address: SocketAddr,
 }
 
 #[derive(Serialize)]
@@ -197,9 +200,9 @@ pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
         clone_git_repository(repo).wrap_err("Error while cloning `aleo-setup` git repository.")?;
     }
 
-    if let Some(repo) = options.aleo_setup_state_monitor_repo.as_ref() {
+    if let Some(state_monitor_options) = options.state_monitor.as_ref() {
         tracing::info!("Cloning aleo-setup-state-monitor git repository.");
-        if let Repo::Remote(remote_repo) = repo {
+        if let Repo::Remote(remote_repo) = &state_monitor_options.repo {
             clone_git_repository(remote_repo)
                 .wrap_err("Error while cloning `aleo-setup-state-monitor` git repository.")?;
         }
@@ -307,9 +310,9 @@ pub fn integration_test(
         build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_stable)
             .wrap_err("error while building setup1-verifier crate")?;
 
-        if let Some(repo) = &options.aleo_setup_state_monitor_repo {
+        if let Some(state_monitor_options) = &options.state_monitor {
             // Build the aleo-setup-state-monitor Rust project.
-            build_rust_crate(repo.dir(), &RustToolchain::Stable)
+            build_rust_crate(state_monitor_options.repo.dir(), &RustToolchain::Stable)
                 .wrap_err("error while building aleo-setup-state-monitor server crate")?;
         }
     }
@@ -545,22 +548,12 @@ pub fn integration_test(
 
     process_joins.push(Box::new(coordinator_join));
 
-    if options.state_monitor {
-        let state_monitor_repo =
-            options
-                .aleo_setup_state_monitor_repo
-                .as_ref()
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "Error in configuration, expected `aleo_setup_state_monitor_repo` 
-                when `state_monitor` is true."
-                    )
-                })?;
+    if let Some(state_monitor_options) = &options.state_monitor {
         let state_monitor_config = StateMonitorConfig {
-            state_monitor_bin: state_monitor_bin_path(state_monitor_repo.dir()),
+            state_monitor_bin: state_monitor_bin_path(state_monitor_options.repo.dir()),
             transcript_dir: coordinator_config.transcript_dir(),
             out_dir: options.out_dir.clone(),
-            address: options.state_monitor_address.clone(),
+            address: state_monitor_options.address.clone(),
         };
 
         let state_monitor_join = run_state_monitor(
