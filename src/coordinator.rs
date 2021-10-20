@@ -465,8 +465,8 @@ fn monitor_coordinator(
                 state_reporter.parse_output_line(&line)?;
 
                 // Write to log file.
-                log_file.write(line.as_ref())?;
-                log_file.write("\n".as_ref())?;
+                log_file.write_all(line.as_ref())?;
+                log_file.write_all("\n".as_ref())?;
             }
             Err(error) => {
                 tracing::error!(

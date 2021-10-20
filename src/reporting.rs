@@ -32,7 +32,7 @@ impl LogFileWriterInternal {
 
 impl Write for LogFileWriterInternal {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        std::io::stdout().write(buf)?;
+        std::io::stdout().write_all(buf)?;
 
         if let Some(file) = &mut self.file {
             file.write(buf)

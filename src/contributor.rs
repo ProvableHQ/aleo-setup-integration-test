@@ -271,8 +271,8 @@ fn contributor_monitor(stdout: File, log_file_path: impl AsRef<Path>) -> eyre::R
         match line_result {
             Ok(line) => {
                 // Write to log file.
-                log_file.write(line.as_ref())?;
-                log_file.write("\n".as_ref())?;
+                log_file.write_all(line.as_ref())?;
+                log_file.write_all("\n".as_ref())?;
             }
             Err(error) => tracing::error!(
                 "Error reading line from pipe to coordinator process: {}",
