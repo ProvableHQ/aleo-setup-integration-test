@@ -80,6 +80,9 @@ pub struct EnvironmentParameters {
     pub participant_lock_timeout: i64,
     /// Timeout as measured in seconds
     pub queue_seen_timeout: i64,
+    /// Option to disable the reliability score zeroing if multiple participants are using the same
+    /// IP. Useful for testing as localhost is often used.
+    pub disable_reliability_zeroing: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -148,6 +151,7 @@ impl From<&CoordinatorConfig> for CoordinatorTomlConfiguration {
                 contributor_seen_timeout: 3600,
                 participant_lock_timeout: 900,
                 queue_seen_timeout: 3600,
+                disable_reliability_zeroing: true,
             },
             verifier_settings: VerifierSettings {
                 assigned_tasks_cache_ttl: NonZeroU64::new(60).unwrap(),
