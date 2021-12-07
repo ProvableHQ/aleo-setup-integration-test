@@ -96,8 +96,6 @@ pub struct ContributorConfig {
     pub contributor_bin_path: PathBuf,
     /// The path to the key file used by this contributor.
     pub key_file_path: PathBuf,
-    /// What type of ceremony will be performed.
-    pub environment: Environment,
     /// The url to connect to the coordinator.
     pub coordinator_api_url: String,
     /// The out directory for the ceremony, the working directory for
