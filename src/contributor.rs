@@ -9,7 +9,7 @@ use crate::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
     test::ContributorStartConfig,
-    AleoPublicKey, CeremonyMessage, ContributorRef, Environment,
+    AleoPublicKey, CeremonyMessage, ContributorRef,
 };
 
 use eyre::Context;
