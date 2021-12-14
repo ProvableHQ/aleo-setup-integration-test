@@ -3,7 +3,7 @@
 
 use crate::{
     ceremony_waiter::spawn_contribution_waiter,
-    contributor::{generate_contributor_key, run_contributor, Contributor, ContributorConfig},
+    cli_contributor::{generate_contributor_key, run_cli_contributor, CLIContributor, CLIContributorConfig},
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
@@ -15,7 +15,7 @@ use crate::{
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
     waiter::{MessageWaiter, WaiterJoinCondition},
-    CeremonyMessage, ContributorRef, Environment, ShutdownReason,
+    CeremonyMessage, ContributorRef, Environment, ShutdownReason, npm::npm_install,
 };
 
 use eyre::Context;
@@ -73,13 +73,22 @@ pub enum ContributorStartConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TestRound {
-    /// Number of contributor participants for this round of the
+    /// Number of CLI contributor participants for this round of the
     /// ceremony. By default the contributor will be started at the
     /// start of the round as per
     /// [ContributorStartConfig::RoundStart], however you may choose
     /// to override this for contributors with
     /// [TestRound::contributor_starts].
-    pub contributors: u8,
+    pub cli_contributors: u8,
+
+    /// Number of browser contributor participants for this round of
+    /// the ceremony. By default the contributor will be started at
+    /// the start of the round as per
+    /// [ContributorStartConfig::RoundStart], however you may choose
+    /// to override this for contributors with
+    /// [TestRound::contributor_starts].
+    #[serde(default)]
+    pub browser_contributors: u8,
 
     /// (Optional) Configure expected contributor drops. A contributor from
     /// [Self::contributors] is assigned automatically to each
@@ -102,7 +111,8 @@ pub struct TestRound {
 impl Default for TestRound {
     fn default() -> Self {
         Self {
-            contributors: 1,
+            cli_contributors: 1,
+            browser_contributors: 0,
             contributor_drops: Default::default(),
             contributor_starts: Default::default(),
         }
@@ -158,6 +168,9 @@ pub struct TestOptions {
     /// The code repository for the `aleo-setup-coordinator` project.
     pub aleo_setup_coordinator_repo: Repo,
 
+    /// The code repository for the `setup-frontend`
+    pub setup_frontend_repo: Repo,
+
     /// Configuration for each round of the ceremony that will be tested.
     pub rounds: Vec<TestRound>,
 }
@@ -198,6 +211,11 @@ pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
     tracing::info!("Cloning aleo-setup git repository.");
     if let Repo::Remote(repo) = &options.aleo_setup_repo {
         clone_git_repository(repo).wrap_err("Error while cloning `aleo-setup` git repository.")?;
+    }
+
+    tracing::info!("Cloning setup-frontend git repository.");
+    if let Repo::Remote(repo) = &options.setup_frontend_repo {
+        clone_git_repository(repo).wrap_err("Error while cloning `setup-frontend` git repository.")?;
     }
 
     if let Some(state_monitor_options) = options.state_monitor.as_ref() {
@@ -284,6 +302,7 @@ pub fn integration_test(
         .join("aleo-setup-coordinator");
 
     let setup_dir = options.aleo_setup_repo.dir();
+    let setup_frontend_dir = options.setup_frontend_repo.dir();
 
     if options.install_prerequisites {
         // Install a specific version of the rust toolchain needed to be
@@ -309,6 +328,9 @@ pub fn integration_test(
         // Build the setup1-cli-tools Rust project.
         build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_stable)
             .wrap_err("error while building setup1-verifier crate")?;
+
+        npm_install(setup_frontend_dir)
+            .wrap_err("error while building setup-frontend")?;
 
         if let Some(state_monitor_options) = &options.state_monitor {
             // Build the aleo-setup-state-monitor Rust project.
@@ -348,28 +370,28 @@ pub fn integration_test(
             let span = tracing::error_span!("round_config", round = round_number);
             let _span_guard = span.enter();
 
-            if round.contributor_starts.len() > round.contributors as usize {
+            if round.contributor_starts.len() > round.cli_contributors as usize {
                 return Err(eyre::eyre!(
                     "Invalid `contributor_starts` for round {}. Its length ({}) \
                         should not exceed the number of contributors ({}).",
                     round_number,
                     round.contributor_starts.len(),
-                    round.contributors,
+                    round.cli_contributors,
                 ));
             }
 
-            if round.contributor_drops.len() > round.contributors as usize {
+            if round.contributor_drops.len() > round.cli_contributors as usize {
                 return Err(eyre::eyre!(
                     "Invalid `contributor_drops` for round {}. Its length ({}) \
                         should not exceed the number of contributors ({}).",
                     round_number,
                     round.contributor_drops.len(),
-                    round.contributors,
+                    round.cli_contributors,
                 ));
             }
 
             // Create the contributors, generate their keys.
-            let contributors: Vec<Contributor> = (1..=round.contributors)
+            let contributors: Vec<CLIContributor> = (1..=round.cli_contributors)
                 .into_iter()
                 .map(|i| {
                     let id = format!("contributor{}-{}", round_number, i);
@@ -384,13 +406,13 @@ pub fn integration_test(
                             || format!("Error generating contributor {} key.", id),
                         )?;
 
-                    Ok(Contributor {
+                    Ok(CLIContributor {
                         id,
                         key_file,
                         address: contributor_key.address,
                     })
                 })
-                .collect::<eyre::Result<Vec<Contributor>>>()?;
+                .collect::<eyre::Result<Vec<CLIContributor>>>()?;
 
             let contributor_drops: HashMap<ContributorRef, DropContributorConfig> = round
                 .contributor_drops
@@ -439,7 +461,7 @@ pub fn integration_test(
                         ));
                     }
 
-                    Ok(ContributorConfig {
+                    Ok(CLIContributorConfig {
                         id: contributor.id.clone(),
                         contributor_ref: contributor.as_contributor_ref(),
                         contributor_bin_path: contributor_bin_path.clone(),
@@ -451,11 +473,11 @@ pub fn integration_test(
                     })
                 })
                 .zip(contributors.iter())
-                .map::<eyre::Result<(Contributor, ContributorConfig)>, _>(|pair| match pair.0 {
+                .map::<eyre::Result<(CLIContributor, CLIContributorConfig)>, _>(|pair| match pair.0 {
                     Ok(config) => Ok((pair.1.clone(), config)),
                     Err(error) => Err(error),
                 })
-                .collect::<eyre::Result<Vec<(Contributor, ContributorConfig)>>>()?;
+                .collect::<eyre::Result<Vec<(CLIContributor, CLIContributorConfig)>>>()?;
 
             Ok(RoundConfig {
                 round_number,
@@ -467,7 +489,7 @@ pub fn integration_test(
         .collect::<eyre::Result<Vec<RoundConfig>>>()?;
 
     // Create the replacement contributors, generate their keys.
-    let replacement_contributors: Vec<(Contributor, ContributorConfig)> = (1..=options
+    let replacement_contributors: Vec<(CLIContributor, CLIContributorConfig)> = (1..=options
         .replacement_contributors)
         .into_iter()
         .map(|i| {
@@ -478,7 +500,7 @@ pub fn integration_test(
             let contributor_key = generate_contributor_key(&contributor_bin_path, &key_file)
                 .wrap_err_with(|| format!("Error generating contributor {} key.", id))?;
 
-            let contributor = Contributor {
+            let contributor = CLIContributor {
                 id: id.clone(),
                 key_file,
                 address: contributor_key.address,
@@ -486,7 +508,7 @@ pub fn integration_test(
 
             // Run the `setup1-contributor`.
             let contributor_out_dir = create_dir_if_not_exists(options.out_dir.join(&id))?;
-            let contributor_config = ContributorConfig {
+            let contributor_config = CLIContributorConfig {
                 id,
                 contributor_ref: contributor.as_contributor_ref(),
                 contributor_bin_path: contributor_bin_path.clone(),
@@ -499,7 +521,7 @@ pub fn integration_test(
 
             Ok((contributor, contributor_config))
         })
-        .collect::<eyre::Result<Vec<(Contributor, ContributorConfig)>>>()?;
+        .collect::<eyre::Result<Vec<(CLIContributor, CLIContributorConfig)>>>()?;
 
     let replacement_contributor_refs: Vec<ContributorRef> = replacement_contributors
         .iter()
@@ -575,7 +597,7 @@ pub fn integration_test(
 
     for (_, contributor_config) in replacement_contributors {
         let contributor_join =
-            run_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
+            run_cli_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
         process_joins.push(Box::new(contributor_join));
     }
 
@@ -635,7 +657,7 @@ pub struct RoundConfig {
     round_number: u64,
     /// A vector of contributors and their configurations. New
     /// contributor processes will be started for each of these.
-    contributors: Vec<(Contributor, ContributorConfig)>,
+    contributors: Vec<(CLIContributor, CLIContributorConfig)>,
     /// A map of contributor references to the relavent drop
     /// configuration (if the contributor needs to be dropped during
     /// this round).
@@ -693,14 +715,14 @@ fn test_round(
 
     // Run the contributors which are to be present at the start of
     // the round.
-    let starting_contributors: Vec<Contributor> = round_config
+    let starting_contributors: Vec<CLIContributor> = round_config
         .contributors
         .iter()
         .filter(|(_contributor, contributor_config)| {
             matches!(contributor_config.start, ContributorStartConfig::RoundStart)
         })
         .map(|(contributor, contributor_config)| {
-            let contributor_join = run_contributor(
+            let contributor_join = run_cli_contributor(
                 contributor_config.clone(),
                 ceremony_tx.clone(),
                 ceremony_rx.clone(),
@@ -708,7 +730,7 @@ fn test_round(
             process_joins.push(Box::new(contributor_join));
             Ok(contributor.clone())
         })
-        .collect::<eyre::Result<Vec<Contributor>>>()?;
+        .collect::<eyre::Result<Vec<CLIContributor>>>()?;
 
     // Configure/set-up the contributors which will join at some later
     // point during the round.
@@ -726,7 +748,7 @@ fn test_round(
                     let waiter_join: Box<dyn MultiJoinable> = Box::new(spawn_contribution_waiter(
                         start_config.after_round_contributions,
                         move || {
-                            let contributor_join = run_contributor(
+                            let contributor_join = run_cli_contributor(
                                 this_contributor_config,
                                 waiter_ceremony_tx,
                                 waiter_ceremony_rx,

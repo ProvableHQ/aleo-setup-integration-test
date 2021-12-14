@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use subprocess::Exec;
 
 use crate::{
-    contributor::Contributor,
+    cli_contributor::CLIContributor,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
@@ -495,7 +495,7 @@ struct RoundState {
 pub fn check_participants_in_round(
     config: &CoordinatorConfig,
     round: u64,
-    contributors: &[Contributor],
+    contributors: &[CLIContributor],
     verifiers: &[Verifier],
 ) -> eyre::Result<()> {
     let state_file = config

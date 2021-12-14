@@ -138,6 +138,7 @@ impl Specification {
                         timout: options.timout.map(Duration::from_secs),
                         aleo_setup_repo: config.aleo_setup_repo.clone(),
                         aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
+                        setup_frontend_repo: config.setup_frontend_repo.clone(),
                         rounds: options.rounds.clone(),
                     }
                 } else {
@@ -154,6 +155,7 @@ impl Specification {
                         timout: options.timout.map(Duration::from_secs),
                         aleo_setup_repo: config.aleo_setup_repo.clone(),
                         aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
+                        setup_frontend_repo: config.setup_frontend_repo.clone(),
                         rounds: options.rounds.clone(),
                     }
                 };

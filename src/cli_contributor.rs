@@ -1,5 +1,5 @@
-//! Functions for controlling/running a `setup1-contributor` ceremony
-//! contributor.
+//! Functions for controlling/running a `setup1-contributor` CLI
+//! ceremony contributor.
 
 use crate::{
     drop_participant::DropContributorConfig,
@@ -56,9 +56,9 @@ pub fn generate_contributor_key(
     Ok(contributor_key)
 }
 
-/// Data relating to a contributor.
+/// Data relating to a CLI contributor.
 #[derive(Clone)]
-pub struct Contributor {
+pub struct CLIContributor {
     /// A short id used to reference this contributor with the
     /// integration test. See [Contributor::coordinator_id()] for the id
     /// that the coordinator uses to refer to the contributor.
@@ -68,7 +68,7 @@ pub struct Contributor {
     pub address: AleoPublicKey,
 }
 
-impl Contributor {
+impl CLIContributor {
     /// The id used to reference this contributor by the coordinator,
     /// and within the ceremony transcript.
     pub fn id_on_coordinator(&self) -> String {
@@ -83,9 +83,9 @@ impl Contributor {
     }
 }
 
-/// Configuration for running a contributor.
+/// Configuration for running a CLI contributor.
 #[derive(Debug, Clone)]
-pub struct ContributorConfig {
+pub struct CLIContributorConfig {
     /// An identifier for this contributor, used only by the
     /// integration test, also used as the name of the working
     /// directory for this contributor.
@@ -133,8 +133,8 @@ impl MultiJoinable for ContributorJoin {
 }
 
 /// Run the `setup1-contributor`.
-pub fn run_contributor(
-    config: ContributorConfig,
+pub fn run_cli_contributor(
+    config: CLIContributorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
 ) -> eyre::Result<ContributorJoin> {

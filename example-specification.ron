@@ -25,7 +25,7 @@
                 (
                     // Number of contributor participants for this
                     // round of the ceremony.
-                    contributors: 2,
+                    cli_contributors: 2,
                     // (Optional) Configure expected contributor
                     // drops. A contributor from contributors is
                     // assigned automatically to each specified
@@ -65,7 +65,7 @@
                 (
                     // Number of contributor participants for this
                     // round of the ceremony.
-                    contributors: 1,
+                    cli_contributors: 1,
                 ),
             ],
         ),

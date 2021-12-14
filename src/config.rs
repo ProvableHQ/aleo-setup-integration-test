@@ -76,6 +76,12 @@ pub struct Config {
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
     #[serde(default = "default_aleo_setup_coordinator_repo")]
     pub aleo_setup_coordinator_repo: Repo,
+
+    /// The code repository for the `setup-frontend` project.
+    ///
+    /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
+    #[serde(default = "default_setup_frontend_repo")]
+    pub setup_frontend_repo: Repo
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -124,6 +130,15 @@ pub fn default_aleo_setup_coordinator_repo() -> Repo {
         dir: "aleo-setup-coordinator".into(),
         url: "https://github.com/AleoHQ/aleo-setup.git".into(),
         branch: "main".into(),
+    })
+}
+
+/// Default value for [Config::setup_frontend_repo].
+pub fn default_setup_frontend_repo() -> Repo {
+    Repo::Remote(RemoteGitRepo {
+        dir: "setup-frontend".into(),
+        url: "https://github.com/AleoHQ/setup-frontend.git".into(),
+        branch: "master".into(),
     })
 }
 

@@ -31,7 +31,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 1,
+                    cli_contributors: 1,
                 ),
             ],
         ),
@@ -44,7 +44,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 2,
+                    cli_contributors: 2,
                 ),
             ],
         ),
@@ -57,7 +57,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 3,
+                    cli_contributors: 3,
                 ),
             ],
         ),
@@ -70,7 +70,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 4,
+                    cli_contributors: 4,
                 ),
             ],
         ),
@@ -83,7 +83,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 1,
+                    cli_contributors: 1,
                 ),
             ],
         ),
@@ -96,7 +96,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 2,
+                    cli_contributors: 2,
                 ),
             ],
         ),
@@ -109,7 +109,7 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 3,
+                    cli_contributors: 3,
                 ),
             ],
         ),

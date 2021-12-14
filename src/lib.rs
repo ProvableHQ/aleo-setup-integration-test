@@ -5,7 +5,8 @@ use std::{fmt::Display, str::FromStr};
 
 pub mod ceremony_waiter;
 pub mod config;
-pub mod contributor;
+pub mod browser_contributor;
+pub mod cli_contributor;
 pub mod coordinator;
 pub mod drop_participant;
 pub mod git;

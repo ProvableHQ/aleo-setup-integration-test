@@ -8,6 +8,7 @@
 aleo-setup/
 aleo-setup-coordinator/
 aleo-setup-state-monitor/
+setup-frontend/
 
 # Cooridinator ceremony transcript
 transcript/
