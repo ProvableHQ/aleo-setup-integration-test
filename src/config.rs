@@ -173,49 +173,6 @@ fn default_state_monitor_address() -> SocketAddr {
 
 pub type TestId = String;
 
-/// Options for each individual test in the [Specification]'s `tests`
-/// field.
-#[derive(Deserialize, Debug)]
-#[serde(deny_unknown_fields)]
-struct SingleTestOptions {
-    /// Id for the individual test.
-    pub id: TestId,
-
-    /// Number of verifier participants for the test.
-    pub verifiers: u8,
-
-    /// (Optional) Number of replacement contributors for the test.
-    /// Default: 0
-    #[serde(default = "default_replacement_contributors")]
-    pub replacement_contributors: u8,
-
-    /// What environment to use for the setup.
-    pub environment: Environment,
-
-    /// (Optional) Time limit for this individual test (in seconds).
-    /// Exceeding this will cause the test to fail. If set to
-    /// `None`  then there is no time limit. Default: `None`
-    #[serde(default)]
-    pub timout: Option<u64>,
-
-    /// (Optional) Whether to skip running this test. Default:
-    /// `false`.
-    #[serde(default = "skip_default")]
-    pub skip: bool,
-
-    /// Configure the tests performed for each round of the ceremony.
-    pub rounds: Vec<TestRound>,
-}
-
-/// Default value for [TestOptions::replacement_contributors].
-fn default_replacement_contributors() -> u8 {
-    0
-}
-
-fn skip_default() -> bool {
-    false
-}
-
 #[cfg(test)]
 mod test {
     use super::Config;
