@@ -7,8 +7,7 @@ use serde::Deserialize;
 
 use crate::{
     git::RemoteGitRepo,
-    test::{Repo, StateMonitorOptions, TestRound},
-    Environment,
+    test::{Repo, StateMonitorOptions},
 };
 
 /// Configuration for how to run the tests.
@@ -81,7 +80,7 @@ pub struct Config {
     ///
     /// See [SingleTestOptions::aleo_setup_repo] for useage examples.
     #[serde(default = "default_setup_frontend_repo")]
-    pub setup_frontend_repo: Repo
+    pub setup_frontend_repo: Repo,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -137,7 +136,7 @@ pub fn default_aleo_setup_coordinator_repo() -> Repo {
 pub fn default_setup_frontend_repo() -> Repo {
     Repo::Remote(RemoteGitRepo {
         dir: "setup-frontend".into(),
-        url: "https://github.com/AleoHQ/setup-frontend.git".into(),
+        url: "git@github.com:AleoHQ/setup-frontend.git".into(),
         branch: "master".into(),
     })
 }

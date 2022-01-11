@@ -1,3 +1,5 @@
+//! Testing for a contributor using the `setup-frontend` running in a web browser.
+
 use std::path::PathBuf;
 
 use crate::{drop_participant::DropContributorConfig, test::ContributorStartConfig};
@@ -26,3 +28,5 @@ pub struct BrowserContributor {
     pub start: ContributorStartConfig,
 }
 
+// TODO: so we need to start a server to host the frontend. Then we need to start each contributor
+// in its own browser instance most likely.

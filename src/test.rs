@@ -3,11 +3,14 @@
 
 use crate::{
     ceremony_waiter::spawn_contribution_waiter,
-    cli_contributor::{generate_contributor_key, run_cli_contributor, CLIContributor, CLIContributorConfig},
+    cli_contributor::{
+        generate_contributor_key, run_cli_contributor, CLIContributor, CLIContributorConfig,
+    },
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
     git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
     join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
+    npm::npm_install,
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, StateMonitorConfig},
@@ -15,7 +18,7 @@ use crate::{
     util::create_dir_if_not_exists,
     verifier::{generate_verifier_key, run_verifier, Verifier},
     waiter::{MessageWaiter, WaiterJoinCondition},
-    CeremonyMessage, ContributorRef, Environment, ShutdownReason, npm::npm_install,
+    CeremonyMessage, ContributorRef, Environment, ShutdownReason,
 };
 
 use eyre::Context;
@@ -79,6 +82,7 @@ pub struct TestRound {
     /// [ContributorStartConfig::RoundStart], however you may choose
     /// to override this for contributors with
     /// [TestRound::contributor_starts].
+    #[serde(default)]
     pub cli_contributors: u8,
 
     /// Number of browser contributor participants for this round of
@@ -215,7 +219,8 @@ pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
 
     tracing::info!("Cloning setup-frontend git repository.");
     if let Repo::Remote(repo) = &options.setup_frontend_repo {
-        clone_git_repository(repo).wrap_err("Error while cloning `setup-frontend` git repository.")?;
+        clone_git_repository(repo)
+            .wrap_err("Error while cloning `setup-frontend` git repository.")?;
     }
 
     if let Some(state_monitor_options) = options.state_monitor.as_ref() {
@@ -329,8 +334,7 @@ pub fn integration_test(
         build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_stable)
             .wrap_err("error while building setup1-verifier crate")?;
 
-        npm_install(setup_frontend_dir)
-            .wrap_err("error while building setup-frontend")?;
+        npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
 
         if let Some(state_monitor_options) = &options.state_monitor {
             // Build the aleo-setup-state-monitor Rust project.
@@ -473,9 +477,11 @@ pub fn integration_test(
                     })
                 })
                 .zip(contributors.iter())
-                .map::<eyre::Result<(CLIContributor, CLIContributorConfig)>, _>(|pair| match pair.0 {
-                    Ok(config) => Ok((pair.1.clone(), config)),
-                    Err(error) => Err(error),
+                .map::<eyre::Result<(CLIContributor, CLIContributorConfig)>, _>(|pair| {
+                    match pair.0 {
+                        Ok(config) => Ok((pair.1.clone(), config)),
+                        Err(error) => Err(error),
+                    }
                 })
                 .collect::<eyre::Result<Vec<(CLIContributor, CLIContributorConfig)>>>()?;
 
