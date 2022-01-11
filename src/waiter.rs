@@ -175,7 +175,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    };
 
     use crate::waiter::IsShutdownMessage;
 
@@ -193,37 +196,35 @@ mod test {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();
 
-        let on_messages_received = Arc::new(Mutex::new(false));
-        let on_messages_received_thread = on_messages_received.clone();
+        let on_messages_received = AtomicBool::new(false);
         let waiter = MessageWaiter::spawn_expected(
             vec![1, 2, 3],
             move || {
-                *on_messages_received_thread.lock().unwrap() = true;
+                on_messages_received.store(true, Ordering::SeqCst);
                 Ok(())
             },
             rx,
         );
 
-        let has_joined = Arc::new(Mutex::new(false));
-
-        let has_joined_thread = has_joined.clone();
+        let has_joined = AtomicBool::new(false);
+        let has_joined_ref = &has_joined;
         let waiter_joiner = std::thread::spawn(move || {
             waiter.join().unwrap();
-            *has_joined_thread.lock().unwrap() = true;
+            has_joined.store(true, Ordering::SeqCst);
         });
 
-        assert!(!*on_messages_received.lock().unwrap());
+        assert!(!on_messages_received.load(Ordering::SeqCst));
 
-        assert!(!*has_joined.lock().unwrap());
+        assert!(!has_joined.load(Ordering::SeqCst));
         bus.broadcast(1).unwrap();
-        assert!(!*has_joined.lock().unwrap());
+        assert!(!has_joined.load(Ordering::SeqCst));
         bus.broadcast(2).unwrap();
-        assert!(!*has_joined.lock().unwrap());
+        assert!(!has_joined.load(Ordering::SeqCst));
         bus.broadcast(3).unwrap();
 
         waiter_joiner.join().unwrap();
-        assert!(*has_joined.lock().unwrap());
-        assert!(*on_messages_received.lock().unwrap());
+        assert!(has_joined.load(Ordering::SeqCst));
+        assert!(on_messages_received.load(Ordering::SeqCst));
     }
 
     /// Test that upon shutdown the waiter is joined, but the

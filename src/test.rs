@@ -8,11 +8,9 @@ use crate::{
     },
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
     drop_participant::{monitor_drops, DropContributorConfig, MonitorDropsConfig},
-    git::{clone_git_repository, LocalGitRepo, RemoteGitRepo},
+    git::{LocalGitRepo, RemoteGitRepo},
     join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
-    npm::npm_install,
     reporting::LogFileWriter,
-    rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     state_monitor::{run_state_monitor, StateMonitorConfig},
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
@@ -126,24 +124,6 @@ impl Default for TestRound {
 /// Command line options for running the Aleo Setup integration test.
 #[derive(Debug, Serialize)]
 pub struct TestOptions {
-    /// Remove any artifacts created during a previous integration
-    /// test run before starting.
-    pub clean: bool,
-
-    /// Whether or not to build the components being tested.
-    pub build: bool,
-
-    /// Keep the git repositories. The following effects take place
-    /// when this is enabled:
-    ///
-    /// + Don't delete git repositories if [Options::clean] is
-    ///   enabled.
-    pub keep_repos: bool,
-
-    /// If true, don't attempt to install install prerequisites. Makes
-    /// the test faster for development purposes.
-    pub install_prerequisites: bool,
-
     /// Number of replacement contributors for the test.
     pub replacement_contributors: u8,
 
@@ -204,36 +184,6 @@ pub struct RoundResults {
 /// coordinator.
 const COORDINATOR_API_URL: &str = "http://localhost:9000";
 
-/// Clone the git repos for `aleo-setup` and `aleo-setup-coordinator`.
-pub fn clone_git_repos(options: &TestOptions) -> eyre::Result<()> {
-    tracing::info!("Cloning aleo-setup-coordinator git repository.");
-    if let Repo::Remote(repo) = &options.aleo_setup_coordinator_repo {
-        clone_git_repository(repo)
-            .wrap_err("Error while cloning `aleo-setup-coordinator` git repository.")?;
-    }
-
-    tracing::info!("Cloning aleo-setup git repository.");
-    if let Repo::Remote(repo) = &options.aleo_setup_repo {
-        clone_git_repository(repo).wrap_err("Error while cloning `aleo-setup` git repository.")?;
-    }
-
-    tracing::info!("Cloning setup-frontend git repository.");
-    if let Repo::Remote(repo) = &options.setup_frontend_repo {
-        clone_git_repository(repo)
-            .wrap_err("Error while cloning `setup-frontend` git repository.")?;
-    }
-
-    if let Some(state_monitor_options) = options.state_monitor.as_ref() {
-        tracing::info!("Cloning aleo-setup-state-monitor git repository.");
-        if let Repo::Remote(remote_repo) = &state_monitor_options.repo {
-            clone_git_repository(remote_repo)
-                .wrap_err("Error while cloning `aleo-setup-state-monitor` git repository.")?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Serialize)]
 pub struct TestResults {
     round_results: Vec<RoundResults>,
@@ -255,37 +205,7 @@ pub fn integration_test(
 
     tracing::info!("Running integration test with options:\n{:#?}", &options);
 
-    // Perfom the clean action if required.
-    if options.clean {
-        tracing::info!("Cleaning integration test.");
-
-        if options.out_dir.exists() {
-            tracing::info!("Removing out dir: {:?}", options.out_dir);
-            std::fs::remove_dir_all(&options.out_dir)?;
-        }
-
-        if !options.keep_repos {
-            if let Repo::Remote(repo) = &options.aleo_setup_repo {
-                if repo.dir.exists() {
-                    tracing::info!("Removing `aleo-setup` repository: {:?}.", &repo.dir);
-                    std::fs::remove_dir_all(&repo.dir)?;
-                }
-            }
-
-            if let Repo::Remote(repo) = &options.aleo_setup_coordinator_repo {
-                if repo.dir.exists() {
-                    tracing::info!(
-                        "Removing `aleo-setup-coordinator` repository: {:?}.",
-                        &repo.dir
-                    );
-                    std::fs::remove_dir_all(&repo.dir)?;
-                }
-            }
-        }
-    }
-
     // Create the log file, and write out the options that were used to run this test.
-    create_dir_if_not_exists(&options.out_dir)?;
     log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
     let test_config_path = options.out_dir.join("test_config.ron");
     std::fs::write(
@@ -296,11 +216,6 @@ pub fn integration_test(
     // Directory to store the contributor and verifier keys.
     let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
 
-    let rust_stable = RustToolchain::Stable;
-
-    // Attempt to clone the git repos if they don't already exist.
-    clone_git_repos(options)?;
-
     let coordinator_dir = options.aleo_setup_coordinator_repo.dir();
     let coordinator_bin_path = coordinator_dir
         .join("target/release")
@@ -308,40 +223,6 @@ pub fn integration_test(
 
     let setup_dir = options.aleo_setup_repo.dir();
     let setup_frontend_dir = options.setup_frontend_repo.dir();
-
-    if options.install_prerequisites {
-        // Install a specific version of the rust toolchain needed to be
-        // able to compile `aleo-setup`.
-        install_rust_toolchain(&rust_stable).wrap_err_with(|| {
-            eyre::eyre!("error while installing rust toolchain {}", rust_stable)
-        })?;
-    }
-
-    if options.build {
-        // Build the setup coordinator Rust project.
-        build_rust_crate(coordinator_dir, &rust_stable)
-            .wrap_err("error while building aleo-setup-coordinator crate")?;
-
-        // Build the setup1-contributor Rust project.
-        build_rust_crate(setup_dir.join("setup1-contributor"), &rust_stable)
-            .wrap_err("error while building setup1-contributor crate")?;
-
-        // Build the setup1-verifier Rust project.
-        build_rust_crate(setup_dir.join("setup1-verifier"), &rust_stable)
-            .wrap_err("error while building setup1-verifier crate")?;
-
-        // Build the setup1-cli-tools Rust project.
-        build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_stable)
-            .wrap_err("error while building setup1-verifier crate")?;
-
-        npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
-
-        if let Some(state_monitor_options) = &options.state_monitor {
-            // Build the aleo-setup-state-monitor Rust project.
-            build_rust_crate(state_monitor_options.repo.dir(), &RustToolchain::Stable)
-                .wrap_err("error while building aleo-setup-state-monitor server crate")?;
-        }
-    }
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.
