@@ -1,7 +1,7 @@
-use std::{fs::OpenOptions, io::Write, time::Duration};
-
 use color_eyre::Help;
 use eyre::Context;
+use fs_err::OpenOptions;
+use std::{io::Write, time::Duration};
 
 use crate::{
     config::{Config, TestId},
@@ -11,6 +11,7 @@ use crate::{
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     specification::Specification,
     test::{integration_test, Repo, TestOptions},
+    util::create_dir_if_not_exists,
 };
 
 /// Clean integration test directory, and remove git repositories if required by
@@ -20,14 +21,14 @@ pub fn clean(config: &Config) -> eyre::Result<()> {
     let out_dir = &config.out_dir;
     if out_dir.exists() {
         tracing::info!("Removing out dir: {:?}", out_dir);
-        std::fs::remove_dir_all(&out_dir)?;
+        fs_err::remove_dir_all(&out_dir)?;
     }
 
     if !config.keep_repos {
         if let Repo::Remote(repo) = &config.aleo_setup_repo {
             if repo.dir.exists() {
                 tracing::info!("Removing `aleo-setup` repository: {:?}.", &repo.dir);
-                std::fs::remove_dir_all(&repo.dir)?;
+                fs_err::remove_dir_all(&repo.dir)?;
             }
         }
         if let Repo::Remote(repo) = &config.aleo_setup_coordinator_repo {
@@ -36,14 +37,14 @@ pub fn clean(config: &Config) -> eyre::Result<()> {
                     "Removing `aleo-setup-coordinator` repository: {:?}.",
                     &repo.dir
                 );
-                std::fs::remove_dir_all(&repo.dir)?;
+                fs_err::remove_dir_all(&repo.dir)?;
             }
         }
 
         if let Repo::Remote(repo) = &config.setup_frontend_repo {
             if repo.dir.exists() {
                 tracing::info!("Removing `setup-frontend` repository: {:?}.", &repo.dir);
-                std::fs::remove_dir_all(&repo.dir)?;
+                fs_err::remove_dir_all(&repo.dir)?;
             }
         }
     }
@@ -87,11 +88,12 @@ pub fn build(config: &Config) -> eyre::Result<()> {
     npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
     let frontend_env_path = setup_frontend_dir.join(".env");
     if !frontend_env_path.exists() {
-        let mut file = OpenOptions::new()
-            .append(false)
-            .create(true)
-            .open(setup_frontend_dir)?;
-        file.write_all("SKIP_PREFLIGHT_CHECK=true".as_bytes())?;
+        fs_err::write(&frontend_env_path, "SKIP_PREFLIGHT_CHECK=true").wrap_err_with(|| {
+            format!(
+                "Error while writing to .env file {:?} for setup-frontend",
+                &frontend_env_path
+            )
+        })?;
     }
 
     if let Some(state_monitor_options) = &config.state_monitor {
@@ -151,15 +153,18 @@ pub fn run(
         ));
     }
 
-    let out_dir = config.out_dir.clone();
-
-    // Create the log file, and write out the options that were used to run this test.
-    log_writer.set_out_file(out_dir.join("integration-test.log"))?;
+    log_writer.set_no_out_file();
 
     // Perfom the clean action if required.
     if config.clean {
         clean(config)?;
     }
+
+    let out_dir = config.out_dir.clone();
+    create_dir_if_not_exists(&out_dir)?;
+
+    // Create the log file, and write out the options that were used to run this test.
+    log_writer.set_out_file(out_dir.join("integration-test.log"))?;
 
     // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(config)?;

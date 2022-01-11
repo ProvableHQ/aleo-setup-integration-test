@@ -9,7 +9,7 @@ where
     P: AsRef<Path> + Into<PathBuf>,
 {
     if !path.as_ref().exists() {
-        std::fs::create_dir(&path)
+        fs_err::create_dir(&path)
             .wrap_err_with(|| format!("Error while creating path {:?}.", path.as_ref()))?;
     }
     Ok(path.into())

@@ -201,20 +201,21 @@ pub fn integration_test(
     options: &TestOptions,
     log_writer: &LogFileWriter,
 ) -> eyre::Result<TestResults> {
-    log_writer.set_no_out_file();
-
     tracing::info!("Running integration test with options:\n{:#?}", &options);
 
+    let out_dir = &options.out_dir;
+    create_dir_if_not_exists(out_dir)?;
+
     // Create the log file, and write out the options that were used to run this test.
-    log_writer.set_out_file(&options.out_dir.join("integration-test.log"))?;
-    let test_config_path = options.out_dir.join("test_config.ron");
-    std::fs::write(
+    log_writer.set_out_file(out_dir.join("integration-test.log"))?;
+    let test_config_path = out_dir.join("test_config.ron");
+    fs_err::write(
         test_config_path,
         ron::ser::to_string_pretty(&options, Default::default())?,
     )?;
 
     // Directory to store the contributor and verifier keys.
-    let keys_dir_path = create_dir_if_not_exists(options.out_dir.join("keys"))?;
+    let keys_dir_path = create_dir_if_not_exists(out_dir.join("keys"))?;
 
     let coordinator_dir = options.aleo_setup_coordinator_repo.dir();
     let coordinator_bin_path = coordinator_dir
