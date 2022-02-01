@@ -114,6 +114,19 @@ impl IsShutdownMessage for CeremonyMessage {
     }
 }
 
+/// Messages pertinent to the running of the entire integration test specification.
+pub enum IntegrationTestMessage {
+    /// The frontend npm server has started.
+    /// 
+    FrontendStarted
+}
+
+impl IsShutdownMessage for IntegrationTestMessage {
+    fn is_shutdown_message(&self) -> bool {
+        false
+    }
+}
+
 /// Which phase of the setup is to be run.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Environment {

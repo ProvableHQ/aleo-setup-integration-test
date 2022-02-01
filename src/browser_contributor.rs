@@ -11,8 +11,6 @@ pub struct BrowserContributor {
     /// integration test, also used as the name of the working
     /// directory for this contributor.
     pub id: String,
-    /// The path to the binary to run this contributor.
-    pub contributor_bin_path: PathBuf,
     /// The url to connect to the coordinator.
     pub coordinator_api_url: String,
     /// The out directory for the ceremony, the working directory for
