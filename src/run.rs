@@ -1,18 +1,20 @@
 use color_eyre::Help;
 use eyre::Context;
-use fs_err::OpenOptions;
-use std::{io::Write, time::Duration};
+use std::time::Duration;
 
 use crate::{
     config::{Config, TestId},
     git::clone_git_repository,
-    npm::npm_install,
+    npm::{check_node_version, npm_install},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     specification::Specification,
     test::{integration_test, Repo, TestOptions},
     util::create_dir_if_not_exists,
 };
+
+/// The currently supported node version.
+static SUPPORTED_NODE_MAJOR_VERSION: u8 = 16;
 
 /// Clean integration test directory, and remove git repositories if required by
 /// [Config::keep_repos] option.
@@ -84,6 +86,15 @@ pub fn build(config: &Config) -> eyre::Result<()> {
     // Build the setup1-cli-tools Rust project.
     build_rust_crate(setup_dir.join("setup1-cli-tools"), &rust_toolchain)
         .wrap_err("error while building setup1-verifier crate")?;
+
+    let node_version = check_node_version()?;
+    if node_version.major != SUPPORTED_NODE_MAJOR_VERSION {
+        return Err(eyre::eyre!(
+            "Unsupported node version {}, expected v{}.*",
+            node_version,
+            SUPPORTED_NODE_MAJOR_VERSION
+        ));
+    }
 
     npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
     let frontend_env_path = setup_frontend_dir.join(".env");
