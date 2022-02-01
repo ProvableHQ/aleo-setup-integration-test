@@ -175,10 +175,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    };
+    use std::sync::{Arc, Mutex};
 
     use crate::waiter::IsShutdownMessage;
 
@@ -192,44 +189,47 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::mutex_atomic)]
     fn test_spawn_expected() {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();
 
-        let on_messages_received = AtomicBool::new(false);
+        let on_messages_received = Arc::new(Mutex::new(false));
+        let on_messages_received_thread = on_messages_received.clone();
         let waiter = MessageWaiter::spawn_expected(
             vec![1, 2, 3],
             move || {
-                on_messages_received.store(true, Ordering::SeqCst);
+                *on_messages_received_thread.lock().unwrap() = true;
                 Ok(())
             },
             rx,
         );
 
-        let has_joined = AtomicBool::new(false);
-        let has_joined_ref = &has_joined;
+        let has_joined = Arc::new(Mutex::new(false));
+        let has_joined_thread = has_joined.clone();
         let waiter_joiner = std::thread::spawn(move || {
             waiter.join().unwrap();
-            has_joined.store(true, Ordering::SeqCst);
+            *has_joined_thread.lock().unwrap() = true;
         });
 
-        assert!(!on_messages_received.load(Ordering::SeqCst));
+        assert!(!*on_messages_received.lock().unwrap());
 
-        assert!(!has_joined.load(Ordering::SeqCst));
+        assert!(!*has_joined.lock().unwrap());
         bus.broadcast(1).unwrap();
-        assert!(!has_joined.load(Ordering::SeqCst));
+        assert!(!*has_joined.lock().unwrap());
         bus.broadcast(2).unwrap();
-        assert!(!has_joined.load(Ordering::SeqCst));
+        assert!(!*has_joined.lock().unwrap());
         bus.broadcast(3).unwrap();
 
         waiter_joiner.join().unwrap();
-        assert!(has_joined.load(Ordering::SeqCst));
-        assert!(on_messages_received.load(Ordering::SeqCst));
+        assert!(*has_joined.lock().unwrap());
+        assert!(*on_messages_received.lock().unwrap());
     }
 
     /// Test that upon shutdown the waiter is joined, but the
     /// on_messages_receieved closure is not invoked.
     #[test]
+    #[allow(clippy::mutex_atomic)]
     fn test_spawn_expected_shutdown() {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();
