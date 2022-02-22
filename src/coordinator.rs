@@ -491,7 +491,7 @@ struct RoundState {
     contributor_ids: Vec<String>,
     /// The ids of the verifiers in the round.
     #[serde(rename = "verifierIds")]
-    verifier_ids: Vec<String>,
+    _verifier_ids: Vec<String>,
 }
 
 /// Check that the specified participants are in the specified round
@@ -500,7 +500,7 @@ pub fn check_participants_in_round(
     config: &CoordinatorConfig,
     round: u64,
     contributors: &[CLIContributor],
-    verifiers: &[Verifier],
+    _verifiers: &[Verifier],
 ) -> eyre::Result<()> {
     let state_file = config
         .transcript_dir()

@@ -117,8 +117,8 @@ impl IsShutdownMessage for CeremonyMessage {
 /// Messages pertinent to the running of the entire integration test specification.
 pub enum IntegrationTestMessage {
     /// The frontend npm server has started.
-    /// 
-    FrontendStarted
+    ///
+    FrontendStarted,
 }
 
 impl IsShutdownMessage for IntegrationTestMessage {

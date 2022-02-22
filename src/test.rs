@@ -223,7 +223,7 @@ pub fn integration_test(
         .join("aleo-setup-coordinator");
 
     let setup_dir = options.aleo_setup_repo.dir();
-    let setup_frontend_dir = options.setup_frontend_repo.dir();
+    let _setup_frontend_dir = options.setup_frontend_repo.dir();
 
     // Output directory for setup1-verifier and setup1-contributor
     // projects.

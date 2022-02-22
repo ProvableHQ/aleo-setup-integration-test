@@ -1,9 +1,11 @@
 use color_eyre::Help;
 use eyre::Context;
 use std::time::Duration;
+use url::Url;
 
 use crate::{
     config::{Config, TestId},
+    frontend::{start_frontend_dev_server, FrontendConfiguration},
     git::clone_git_repository,
     npm::{check_node_version, npm_install},
     reporting::LogFileWriter,
@@ -54,10 +56,20 @@ pub fn clean(config: &Config) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Configuration for running [build()], building the projects required to run the ceremony.
+pub struct BuildConfig<'a> {
+    run_config: &'a Config,
+    frontend_required: bool,
+}
+
 /// Build the projects required to run the ceremony.
-pub fn build(config: &Config) -> eyre::Result<()> {
+pub fn build(config: &BuildConfig) -> eyre::Result<()> {
+    let BuildConfig {
+        run_config,
+        frontend_required,
+    } = *config;
     let rust_toolchain = RustToolchain::Stable;
-    if config.install_prerequisites {
+    if run_config.install_prerequisites {
         tracing::info!("Installing toolchain prerequisites.");
         // Install a specific version of the rust toolchain needed to be
         // able to compile `aleo-setup`.
@@ -68,9 +80,9 @@ pub fn build(config: &Config) -> eyre::Result<()> {
 
     tracing::info!("Building required projects.");
 
-    let coordinator_dir = config.aleo_setup_coordinator_repo.dir();
-    let setup_dir = config.aleo_setup_repo.dir();
-    let setup_frontend_dir = config.setup_frontend_repo.dir();
+    let coordinator_dir = run_config.aleo_setup_coordinator_repo.dir();
+    let setup_dir = run_config.aleo_setup_repo.dir();
+    let setup_frontend_dir = run_config.setup_frontend_repo.dir();
     // Build the setup coordinator Rust project.
     build_rust_crate(coordinator_dir, &rust_toolchain)
         .wrap_err("error while building aleo-setup-coordinator crate")?;
@@ -96,18 +108,20 @@ pub fn build(config: &Config) -> eyre::Result<()> {
         ));
     }
 
-    npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
-    let frontend_env_path = setup_frontend_dir.join(".env");
-    if !frontend_env_path.exists() {
-        fs_err::write(&frontend_env_path, "SKIP_PREFLIGHT_CHECK=true").wrap_err_with(|| {
-            format!(
-                "Error while writing to .env file {:?} for setup-frontend",
-                &frontend_env_path
-            )
-        })?;
+    if frontend_required {
+        npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
+        let frontend_env_path = setup_frontend_dir.join(".env");
+        if !frontend_env_path.exists() {
+            fs_err::write(&frontend_env_path, "SKIP_PREFLIGHT_CHECK=true").wrap_err_with(|| {
+                format!(
+                    "Error while writing to .env file {:?} for setup-frontend",
+                    &frontend_env_path
+                )
+            })?;
+        }
     }
 
-    if let Some(state_monitor_options) = &config.state_monitor {
+    if let Some(state_monitor_options) = &run_config.state_monitor {
         // Build the aleo-setup-state-monitor Rust project.
         build_rust_crate(state_monitor_options.repo.dir(), &RustToolchain::Stable)
             .wrap_err("error while building aleo-setup-state-monitor server crate")?;
@@ -147,6 +161,16 @@ pub fn clone_git_repos(config: &Config) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Returns `true` if the frontend is required for any of the tests.
+fn frontend_required(specification: &Specification) -> bool {
+    specification
+        .tests
+        .iter()
+        .flat_map(|test| test.rounds.iter())
+        .find(|round| round.browser_contributors > 0)
+        .is_some()
+}
+
 /// Run multiple tests specified in the ron specification file.
 ///
 /// If `only_tests` contains some values, only the test id's contained
@@ -177,11 +201,29 @@ pub fn run(
     // Create the log file, and write out the options that were used to run this test.
     log_writer.set_out_file(out_dir.join("integration-test.log"))?;
 
+    let frontend_required = frontend_required(specification);
+
     // Attempt to clone the git repos if they don't already exist.
     clone_git_repos(config)?;
 
     if config.build {
-        build(config)?;
+        let build_config = BuildConfig {
+            run_config: &config,
+            frontend_required,
+        };
+        build(&build_config)?;
+    }
+
+    let frontend_out_dir = config.out_dir.join("frontend");
+
+    if frontend_required {
+        create_dir_if_not_exists(&frontend_out_dir)?;
+        let frontend_config = FrontendConfiguration {
+            frontend_repo_dir: config.setup_frontend_repo.dir().to_path_buf(),
+            out_dir: frontend_out_dir,
+            backend_url: Url::parse("http://localhost:9000")?,
+        };
+        start_frontend_dev_server(frontend_config)?;
     }
 
     let mut errors: Vec<eyre::Error> = specification

@@ -53,6 +53,7 @@ dependencies = [
  "tracing-appender",
  "tracing-error",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
