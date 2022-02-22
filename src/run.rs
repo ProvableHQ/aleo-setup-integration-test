@@ -223,6 +223,8 @@ pub fn run(
             out_dir: frontend_out_dir,
             backend_url: Url::parse("http://localhost:9000")?,
         };
+        // TODO: use the returned control and status channels to shutdown the server gracefully at
+        // the end of this test.
         start_frontend_dev_server(frontend_config)?;
     }
 
