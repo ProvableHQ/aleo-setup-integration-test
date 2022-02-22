@@ -5,7 +5,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    CeremonyMessage,
+    AleoPublicKey, CeremonyMessage,
 };
 
 use eyre::Context;
@@ -69,6 +69,13 @@ pub struct Verifier {
     pub id: String,
     /// This verifier's view key.
     pub view_key_path: PathBuf,
+}
+
+/// A reference to a verifier in the ceremony.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct VerifierRef {
+    /// Public aleo address
+    pub address: AleoPublicKey,
 }
 
 /// Run the `setup1-verifier`.

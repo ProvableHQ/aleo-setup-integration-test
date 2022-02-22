@@ -50,6 +50,14 @@
         url: "git@github.com:AleoHQ/aleo-setup-coordinator.git",
         branch: "main",
     ),
+    // The code repository for the `setup-frontend` project.
+    // Checking out a remote repository.
+    setup_frontend_repo: (
+        type: "Remote",
+        dir: "aleo-setup-coordinator",
+        url: "git@github.com:AleoHQ/aleo-setup-coordinator.git",
+        branch: "main",
+    ),
     // Whether to run the `aleo-setup-state-monitor` application.
     // Requires `python3` and `pip` to be installed. Only supported
     // on Linux.
