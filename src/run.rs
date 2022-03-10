@@ -109,7 +109,9 @@ pub fn build(config: &BuildConfig) -> eyre::Result<()> {
     }
 
     if frontend_required {
-        npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
+        if run_config.install_prerequisites {
+            npm_install(setup_frontend_dir).wrap_err("error while building setup-frontend")?;
+        }
         let frontend_env_path = setup_frontend_dir.join(".env");
         if !frontend_env_path.exists() {
             fs_err::write(&frontend_env_path, "SKIP_PREFLIGHT_CHECK=true").wrap_err_with(|| {

@@ -47,12 +47,24 @@ pub fn start_frontend_dev_server(
     let control_bus = mpmc_bus::Bus::new(100);
     let status_bus = mpmc_bus::Bus::new(100);
 
-    tracing::info!("Starting frontend server.");
+    let backend_url_string: String = config
+        .backend_url
+        .to_string()
+        .strip_suffix("/")
+        .ok_or_else(|| {
+            eyre::eyre!("Expected backend_url.to_string() to end with \"/\" forward slash")
+        })?
+        .to_string();
+
+    tracing::info!(
+        "Starting frontend server with REACT_APP_CEREMONY_URL={}",
+        &backend_url_string
+    );
 
     let mut process = subprocess::Exec::cmd("npm")
         .arg("start")
         .cwd(&config.frontend_repo_dir)
-        .env("REACT_APP_CEREMONY_URL", config.backend_url.to_string())
+        .env("REACT_APP_CEREMONY_URL", backend_url_string)
         .stdout(Redirection::Pipe)
         .stderr(Redirection::Merge)
         .popen()
@@ -152,7 +164,9 @@ pub fn start_frontend_dev_server(
 }
 
 lazy_static::lazy_static! {
-    static ref STARTED_RE: Regex = Regex::new(".*You can now view setup-frontend in the browser.*").unwrap();
+    /// This message occurs at roughly the same time as when the frontend development server has
+    /// started.
+    static ref STARTED_RE: Regex = Regex::new(".*Compiled with warnings.*").unwrap();
 }
 
 fn parse_output_line(line: &str) -> eyre::Result<Option<FrontendServerStatusMessage>> {

@@ -93,6 +93,65 @@ pub fn run_browser_contributor(
     // from here.
 }
 
+
+// TODO: these are the steps that need to be performed
+//
+// TODO: first steps
+//
+//
+// AFTER COMPLETED CEREMONY
+//
+// Check that path /html/body/div/section/div[1]/div/section/main/div/h3
+// Is equal to "Success! Thank you for your contribution to the setup."
+//
+// Click button /html/body/div/section/div[1]/div/section/main/div/div/button[1]/span
+// Check that the span contains "Back Up Wallet"
+//
+// Check that title /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/h3
+// Is equal to "Back Up using Private Key"
+//
+// Check that /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/div[1]/p[1]
+// Contains a valid Aleo Private Key: e.g.
+// APrivateKey1uaaXYKve7R9BvVZtYXcXAbmFPfX2vVP2m7nhyUpXq5STAi3
+//
+// Check that /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/div[1]/p[2]
+// Contains a valid Aleo Address: e.g.
+// aleo1lypf27q7dsq0rdjx7de4v6g9rjj22xzl9kdz5dt8w8sukxvhgyrqfwf8ea
+//
+// Click /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/div[2]/button[1]/span
+// Check that the span contains "Copy"
+// Check the system clipboard?
+//
+// Click /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/div[2]/button[2]/span
+// Check that the span contains "Download"
+// Check that recieved json file with the name backup.json:
+// {"address":"aleo1lypf27q7dsq0rdjx7de4v6g9rjj22xzl9kdz5dt8w8sukxvhgyrqfwf8ea","privateKey":"APrivateKey1uaaXYKve7R9BvVZtYXcXAbmFPfX2vVP2m7nhyUpXq5STAi3"}
+//
+//
+// Click /html/body/div[1]/section/div[1]/div/section/main/div/div[2]/div[2]/button/span
+// Check that the span contains "Continue"
+//
+// Click /html/body/div[4]/div/div[2]/div/div[2]/div/div/div[2]/button[2]/span
+// Check that the span contains "I Understand"
+//
+// Check the title /html/body/div[1]/section/div[1]/div/section/main/div/div[1]/h3
+// Contains: "You've successfully backed up your wallet."
+//
+// Click /html/body/div[1]/section/div[1]/div/section/main/div/div[2]/div[2]/button/span
+// Check that the span contains "Continue"
+//
+// Check that the title
+// Contains: "Thank you for your contribution to the setup."
+//
+// TODO: Check what happens when there is no email entered (validation)
+//
+// Enter an email address in the input field at xpath //*[@id="email"]
+//
+// Click /html/body/div[1]/section/div[1]/div/section/main/div/div[2]/div[2]/button/span
+// Check that the span contains "Continue"
+//
+// TODO: mock the email submission
+
 async fn spawn_browser_contributor(
     config: BrowserContributorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
