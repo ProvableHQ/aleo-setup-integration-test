@@ -11,7 +11,6 @@ use fs_err::OpenOptions;
 use mpmc_bus::{Receiver, Sender};
 use regex::Regex;
 use subprocess::{Popen, Redirection};
-use tracing::trace_span;
 use url::Url;
 
 pub struct FrontendConfiguration {
@@ -80,7 +79,7 @@ pub fn start_frontend_dev_server(
 
     let mut control_rx = control_bus.subscribe();
     std::thread::spawn(move || {
-        let span = trace_span!("frontend_server_control");
+        let span = tracing::error_span!("frontend_server_control");
         let _guard = span.enter();
 
         fn process_message(
@@ -108,13 +107,11 @@ pub fn start_frontend_dev_server(
         }
     });
 
-    // TODO: implement a thread that monitors for the server to have started.
-    // I think this is the message "Files successfully emitted, waiting for typecheck results..."
 
     let status_tx = status_bus.broadcaster();
     let log_file_path = config.out_dir.join("frontend_server.log");
     std::thread::spawn::<_, eyre::Result<()>>(move || {
-        let span = trace_span!("frontend_server_monitor");
+        let span = tracing::error_span!("frontend_server_monitor");
         let _guard = span.enter();
 
         let buf_pipe = BufReader::new(stdout);
@@ -166,6 +163,9 @@ pub fn start_frontend_dev_server(
 lazy_static::lazy_static! {
     /// This message occurs at roughly the same time as when the frontend development server has
     /// started.
+    /// TODO: this message could also perhaps be: "Files successfully emitted, waiting for
+    /// typecheck results...", the output seems to change from time to time, perhaps depending on
+    /// whether it's a clean compile or using something cached.
     static ref STARTED_RE: Regex = Regex::new(".*Compiled with warnings.*").unwrap();
 }
 

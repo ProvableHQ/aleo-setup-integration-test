@@ -4,7 +4,7 @@ use std::{path::PathBuf, time::Duration};
 
 use mpmc_bus::{Receiver, Sender};
 use thirtyfour::{By, DesiredCapabilities, WebDriver};
-use tracing::{trace_span, Instrument};
+use tracing::Instrument;
 use url::Url;
 
 use crate::{
@@ -64,13 +64,13 @@ pub fn run_browser_contributor(
     ceremony_tx: Sender<CeremonyMessage>,
     mut ceremony_rx: Receiver<CeremonyMessage>,
 ) -> eyre::Result<()> {
-    let span = trace_span!("browser_contributor", id = config.id.as_str());
+    let span = tracing::error_span!("browser_contributor", id = config.id.as_str());
     std::thread::spawn::<_, eyre::Result<()>>(move || {
         let _guard = span.enter();
         let rt = tokio::runtime::Builder::new_multi_thread().build()?;
 
         let spawned_ceremony_rx = ceremony_rx.clone();
-        let spawn_span = trace_span!("tokio");
+        let spawn_span = tracing::debug_span!("tokio");
         rt.spawn(
             async move { spawn_browser_contributor(config, ceremony_tx, spawned_ceremony_rx) }
                 .instrument(spawn_span),
