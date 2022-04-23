@@ -64,6 +64,8 @@ pub fn start_frontend_dev_server(
         .arg("start")
         .cwd(&config.frontend_repo_dir)
         .env("REACT_APP_CEREMONY_URL", backend_url_string)
+        // This disables launching of the browser at startup.
+        .env("BROWSER", "none")
         .stdout(Redirection::Pipe)
         .stderr(Redirection::Merge)
         .popen()
@@ -106,7 +108,6 @@ pub fn start_frontend_dev_server(
             }
         }
     });
-
 
     let status_tx = status_bus.broadcaster();
     let log_file_path = config.out_dir.join("frontend_server.log");

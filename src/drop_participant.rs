@@ -7,7 +7,7 @@ use std::{collections::HashMap, thread::JoinHandle};
 
 /// The configuration for dropping a contributor from the ceremony.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DropContributorConfig {
+pub struct DropContributorSpec {
     /// A contributor is dropped (process killed) after having made
     /// this number of contributions.
     pub after_contributions: u64,
@@ -19,7 +19,7 @@ pub struct MonitorDropsConfig {
     /// have occurred by the time the [monitor_drops()] thread shuts
     /// down at the end of the test, then an error will be returned
     /// during join.
-    pub contributor_drops: HashMap<ContributorRef, DropContributorConfig>,
+    pub contributor_drops: HashMap<ContributorRef, DropContributorSpec>,
 }
 
 /// Monitor the ceremony for dropped contributors. Returns an error if
@@ -78,7 +78,7 @@ pub fn monitor_drops(
 }
 
 fn check_drops(
-    contributor_drops: &HashMap<ContributorRef, DropContributorConfig>,
+    contributor_drops: &HashMap<ContributorRef, DropContributorSpec>,
 ) -> eyre::Result<()> {
     if !contributor_drops.is_empty() {
         return Err(eyre::eyre!(

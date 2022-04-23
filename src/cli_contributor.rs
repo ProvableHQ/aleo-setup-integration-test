@@ -2,13 +2,13 @@
 //! ceremony contributor.
 
 use crate::{
-    drop_participant::DropContributorConfig,
+    drop_participant::DropContributorSpec,
     join::MultiJoinable,
     process::MonitorProcessMessage,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    test::ContributorStartConfig,
+    test::ContributorStartSpec,
     AleoPublicKey, CeremonyMessage, ContributorRef,
 };
 
@@ -57,7 +57,7 @@ pub fn generate_contributor_key(
 }
 
 /// Data relating to a CLI contributor.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CLIContributor {
     /// A short id used to reference this contributor with the
     /// integration test. See [Contributor::coordinator_id()] for the id
@@ -93,7 +93,7 @@ pub struct CLIContributorConfig {
     /// Reference to the contributor.
     pub contributor_ref: ContributorRef,
     /// The path to the binary to run this contributor.
-    pub contributor_bin_path: PathBuf,
+    pub bin_path: PathBuf,
     /// The path to the key file used by this contributor.
     pub key_file_path: PathBuf,
     /// The url to connect to the coordinator.
@@ -106,19 +106,19 @@ pub struct CLIContributorConfig {
     /// according to the specified config. If `None` then the
     /// contributor will not be deliberately dropped from the round,
     /// and if it is dropped, an error will occur.
-    pub drop: Option<DropContributorConfig>,
+    pub drop: Option<DropContributorSpec>,
     /// When this contributor is configured to start during the round.
-    pub start: ContributorStartConfig,
+    pub start: ContributorStartSpec,
 }
 
 /// Allows the threads created by [run_contributor()] to be joined.
 #[derive(Debug)]
-pub struct ContributorJoin {
+pub struct CLIContributorJoin {
     monitor_process_join: MonitorProcessJoin,
     monitor_ceremony_join: std::thread::JoinHandle<()>,
 }
 
-impl ContributorJoin {
+impl CLIContributorJoin {
     /// Joins the threads created by [run_contributor()].
     fn join(self) -> std::thread::Result<()> {
         self.monitor_process_join.join()?;
@@ -126,9 +126,9 @@ impl ContributorJoin {
     }
 }
 
-impl MultiJoinable for ContributorJoin {
+impl MultiJoinable for CLIContributorJoin {
     fn join(self: Box<Self>) -> std::thread::Result<()> {
-        ContributorJoin::join(*self)
+        CLIContributorJoin::join(*self)
     }
 }
 
@@ -137,7 +137,7 @@ pub fn run_cli_contributor(
     config: CLIContributorConfig,
     ceremony_tx: Sender<CeremonyMessage>,
     ceremony_rx: Receiver<CeremonyMessage>,
-) -> eyre::Result<ContributorJoin> {
+) -> eyre::Result<CLIContributorJoin> {
     let key_file = File::open(&config.key_file_path)?;
     let contributor_key: ContributorKey = serde_json::from_reader(key_file)?;
 
@@ -157,7 +157,7 @@ pub fn run_cli_contributor(
         .expect("Should convert keys path to str")
         .to_owned();
 
-    let exec = subprocess::Exec::cmd(&config.contributor_bin_path.canonicalize()?)
+    let exec = subprocess::Exec::cmd(&config.bin_path.canonicalize()?)
         .cwd(&config.out_dir)
         .env("RUST_BACKTRACE", "1")
         .env("RUST_LOG", "debug,hyper=warn")
@@ -244,7 +244,7 @@ pub fn run_cli_contributor(
         tracing::debug!("Thread closing gracefully.")
     });
 
-    let join = ContributorJoin {
+    let join = CLIContributorJoin {
         monitor_process_join,
         monitor_ceremony_join,
     };

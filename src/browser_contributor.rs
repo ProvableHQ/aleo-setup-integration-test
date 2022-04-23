@@ -7,11 +7,9 @@ use thirtyfour::{By, DesiredCapabilities, WebDriver};
 use tracing::Instrument;
 use url::Url;
 
-use crate::{
-    drop_participant::DropContributorConfig, test::ContributorStartConfig, CeremonyMessage,
-};
+use crate::{drop_participant::DropContributorSpec, test::ContributorStartSpec, CeremonyMessage};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BrowserContributor {
     /// A short id used to reference this contributor with the
     /// integration test. See [Contributor::coordinator_id()] for the id
@@ -51,9 +49,9 @@ pub struct BrowserContributorConfig {
     /// according to the specified config. If `None` then the
     /// contributor will not be deliberately dropped from the round,
     /// and if it is dropped, an error will occur.
-    pub drop: Option<DropContributorConfig>,
+    pub drop: Option<DropContributorSpec>,
     /// When this contributor is configured to start during the round.
-    pub start: ContributorStartConfig,
+    pub start: ContributorStartSpec,
 }
 
 // TODO: so we need to start a server to host the frontend. Then we need to start each contributor
@@ -66,14 +64,14 @@ pub fn run_browser_contributor(
 ) -> eyre::Result<()> {
     let span = tracing::error_span!("browser_contributor", id = config.id.as_str());
     std::thread::spawn::<_, eyre::Result<()>>(move || {
-        let _guard = span.enter();
+        let thread_span = span.clone();
+        let _guard = thread_span.enter();
         let rt = tokio::runtime::Builder::new_multi_thread().build()?;
 
         let spawned_ceremony_rx = ceremony_rx.clone();
-        let spawn_span = tracing::debug_span!("tokio");
         rt.spawn(
             async move { spawn_browser_contributor(config, ceremony_tx, spawned_ceremony_rx) }
-                .instrument(spawn_span),
+                .instrument(span),
         );
 
         loop {
@@ -92,7 +90,6 @@ pub fn run_browser_contributor(
     // TODO: to get the aleo address I think I might need to extract that from the UI and return it
     // from here.
 }
-
 
 // TODO: these are the steps that need to be performed
 //

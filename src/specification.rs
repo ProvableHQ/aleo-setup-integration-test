@@ -3,7 +3,7 @@
 
 use serde::Deserialize;
 
-use crate::{test::TestRound, Environment};
+use crate::{test::TestRoundSpec, Environment};
 
 /// Specification for multiple tests to be performed. Will be
 /// deserialized from a ron file.
@@ -11,7 +11,7 @@ use crate::{test::TestRound, Environment};
 #[serde(deny_unknown_fields)]
 pub struct Specification {
     /// Specifications for the individual tests.
-    pub tests: Vec<SingleTestOptions>,
+    pub tests: Vec<SingleTestSpec>,
 }
 
 pub type TestId = String;
@@ -20,7 +20,7 @@ pub type TestId = String;
 /// field.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct SingleTestOptions {
+pub struct SingleTestSpec {
     /// Id for the individual test.
     pub id: TestId,
 
@@ -47,7 +47,7 @@ pub struct SingleTestOptions {
     pub skip: bool,
 
     /// Configure the tests performed for each round of the ceremony.
-    pub rounds: Vec<TestRound>,
+    pub rounds: Vec<TestRoundSpec>,
 }
 
 /// Default value for [SingleTestOptions::replacement_contributors].

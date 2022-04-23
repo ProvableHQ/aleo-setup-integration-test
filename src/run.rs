@@ -11,7 +11,7 @@ use crate::{
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
     specification::Specification,
-    test::{integration_test, Repo, TestOptions},
+    test::{integration_test, ContributorType, Repo, TestOptions},
     util::create_dir_if_not_exists,
 };
 
@@ -169,7 +169,16 @@ fn frontend_required(specification: &Specification) -> bool {
         .tests
         .iter()
         .flat_map(|test| test.rounds.iter())
-        .find(|round| round.browser_contributors > 0)
+        .find(|round| {
+            round
+                .contributors
+                .iter()
+                .filter(|contributor| {
+                    matches!(contributor.contributor_type, ContributorType::Browser)
+                })
+                .next()
+                .is_some()
+        })
         .is_some()
 }
 
