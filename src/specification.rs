@@ -1,5 +1,6 @@
-//! This module contains functions for running multiple integration
-//! tests.
+//! Format of the specification of the tests to be run. See
+//! [example-specification.ron](../example-specification.ron) for an annotated example of the
+//! specification file that the code in this module supports deserializing.
 
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +55,7 @@ pub struct SingleTest {
 /// [StartAfterContributions::contributions] have been made in the
 /// current round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartAfterRoundContributions {
     /// See [StartAfterContributions].
     pub after_round_contributions: u64,
@@ -62,6 +64,7 @@ pub struct StartAfterRoundContributions {
 /// The configuration for when a contributor will be started
 /// during/before a round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum ContributorStart {
     /// Start the contributor at the beginning of the ceremony. This
     /// is only a valid option for replacement contributors.
@@ -88,12 +91,6 @@ pub enum ContributorKind {
     CLI,
 }
 
-impl Default for ContributorKind {
-    fn default() -> Self {
-        Self::CLI
-    }
-}
-
 /// The configuration for dropping a contributor from the ceremony.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DropContributor {
@@ -103,9 +100,9 @@ pub struct DropContributor {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Contributor {
     /// See [`ContributorType`].
-    #[serde(default)]
     pub kind: ContributorKind,
     /// See [`ContributorStartConfig`].
     #[serde(default)]
@@ -115,30 +112,12 @@ pub struct Contributor {
     pub drop: Option<DropContributor>,
 }
 
-impl Default for Contributor {
-    fn default() -> Self {
-        Self {
-            kind: ContributorKind::CLI,
-            start: ContributorStart::RoundStart,
-            drop: None,
-        }
-    }
-}
-
 /// Specification for running each round of the ceremony.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TestRound {
     /// Specification for each contributor that will be started for this round.
-    #[serde(default)]
     pub contributors: Vec<Contributor>,
-}
-
-impl Default for TestRound {
-    fn default() -> Self {
-        Self {
-            contributors: vec![Contributor::default()],
-        }
-    }
 }
 
 /// Default value for [SingleTestOptions::replacement_contributors].
