@@ -7,7 +7,7 @@ use thirtyfour::{By, DesiredCapabilities, WebDriver};
 use tracing::Instrument;
 use url::Url;
 
-use crate::{drop_participant::DropContributorSpec, test::ContributorStartSpec, CeremonyMessage};
+use crate::{specification, CeremonyMessage};
 
 #[derive(Debug, Clone)]
 pub struct BrowserContributor {
@@ -49,9 +49,9 @@ pub struct BrowserContributorConfig {
     /// according to the specified config. If `None` then the
     /// contributor will not be deliberately dropped from the round,
     /// and if it is dropped, an error will occur.
-    pub drop: Option<DropContributorSpec>,
+    pub drop: Option<specification::DropContributor>,
     /// When this contributor is configured to start during the round.
-    pub start: ContributorStartSpec,
+    pub start: specification::ContributorStart,
 }
 
 // TODO: so we need to start a server to host the frontend. Then we need to start each contributor

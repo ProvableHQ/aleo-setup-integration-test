@@ -8,10 +8,11 @@ use crate::{
         generate_contributor_key, run_cli_contributor, CLIContributor, CLIContributorConfig,
     },
     coordinator::{check_participants_in_round, run_coordinator, CoordinatorConfig},
-    drop_participant::{monitor_drops, DropContributorSpec, MonitorDropsConfig},
+    drop_participant::{monitor_drops, MonitorDropsConfig},
     git::{LocalGitRepo, RemoteGitRepo},
     join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
     reporting::LogFileWriter,
+    specification,
     state_monitor::{run_state_monitor, StateMonitorConfig},
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
@@ -46,89 +47,6 @@ impl Repo {
         match self {
             Repo::Local(repo) => &repo.dir,
             Repo::Remote(repo) => &repo.dir,
-        }
-    }
-}
-
-/// Start a ceremony participant after
-/// [StartAfterContributions::contributions] have been made in the
-/// current round.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StartAfterRoundContributions {
-    /// See [StartAfterContributions].
-    after_round_contributions: u64,
-}
-
-/// The configuration for when a contributor will be started
-/// during/before a round.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ContributorStartSpec {
-    /// Start the contributor at the beginning of the ceremony. This
-    /// is only a valid option for replacement contributors.
-    CeremonyStart,
-    /// Start the contributor while the current round is waiting for
-    /// participants to join.
-    RoundStart,
-    // See [StartAfterContributions].
-    AfterRoundContributions(StartAfterRoundContributions),
-}
-
-impl Default for ContributorStartSpec {
-    fn default() -> Self {
-        Self::RoundStart
-    }
-}
-
-/// What type of contributor will be started.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ContributorType {
-    /// Browser Contributor.
-    Browser,
-    /// CLI Contributor.
-    CLI,
-}
-
-impl Default for ContributorType {
-    fn default() -> Self {
-        Self::CLI
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContributorSpec {
-    /// See [`ContributorType`].
-    #[serde(default)]
-    pub contributor_type: ContributorType,
-    /// See [`ContributorStartConfig`].
-    #[serde(default)]
-    pub start: ContributorStartSpec,
-    /// See [`DropContributorConfig`].
-    #[serde(default)]
-    pub drop: Option<DropContributorSpec>,
-}
-
-impl Default for ContributorSpec {
-    fn default() -> Self {
-        Self {
-            contributor_type: ContributorType::CLI,
-            start: ContributorStartSpec::RoundStart,
-            drop: None,
-        }
-    }
-}
-
-/// Specification for running each round of the ceremony.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TestRoundSpec {
-    /// Specification for each contributor that will be started for this round.
-    #[serde(default)]
-    pub contributors: Vec<ContributorSpec>,
-}
-
-impl Default for TestRoundSpec {
-    fn default() -> Self {
-        Self {
-            contributors: vec![ContributorSpec::default()],
         }
     }
 }
@@ -168,7 +86,7 @@ pub struct TestOptions {
     pub setup_frontend_repo: Repo,
 
     /// Configuration for each round of the ceremony that will be tested.
-    pub rounds: Vec<TestRoundSpec>,
+    pub rounds: Vec<specification::TestRound>,
 }
 
 /// Options for running the `aleo-setup-state-monitor`
@@ -268,7 +186,7 @@ pub fn integration_test(
             let span = tracing::error_span!("round_config", round = round_number);
             let _span_guard = span.enter();
 
-            let mut contributor_drops: HashMap<ContributorRef, DropContributorSpec> =
+            let mut contributor_drops: HashMap<ContributorRef, specification::DropContributor> =
                 HashMap::new();
 
             // Create the contributors, generate their keys.
@@ -283,9 +201,9 @@ pub fn integration_test(
 
                     let contributor_out_dir = options.out_dir.join(&id);
 
-                    let run_contributor = match contributor_spec.contributor_type {
-                        ContributorType::Browser => todo!(),
-                        ContributorType::CLI => {
+                    let run_contributor = match contributor_spec.kind {
+                        specification::ContributorKind::Browser => todo!(),
+                        specification::ContributorKind::CLI => {
                             let contributor_key_file_name = format!("{}-key.json", id);
                             let key_file = keys_dir_path.join(contributor_key_file_name);
 
@@ -310,7 +228,7 @@ pub fn integration_test(
 
                             let start = contributor_spec.start.clone();
 
-                            if let ContributorStartSpec::CeremonyStart = &start {
+                            if let specification::ContributorStart::CeremonyStart = &start {
                                 return Err(eyre::eyre!(
                                     "Invalid contributor_starts for round {}. {:?} \
                                         is not a valid start config for a normal contributor.",
@@ -377,7 +295,7 @@ pub fn integration_test(
                 coordinator_api_url: COORDINATOR_API_URL.to_string(),
                 out_dir: contributor_out_dir,
                 drop: None,
-                start: ContributorStartSpec::CeremonyStart,
+                start: specification::ContributorStart::CeremonyStart,
             };
 
             Ok((contributor, contributor_config))
@@ -458,7 +376,8 @@ pub fn integration_test(
 
     for (_, contributor_config) in replacement_contributors {
         let contributor_join =
-            run_cli_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())?;
+            run_cli_contributor(contributor_config, ceremony_tx.clone(), ceremony_rx.clone())
+                .wrap_err("Error while running CLI contributor.")?;
         process_joins.push(Box::new(contributor_join));
     }
 
@@ -522,7 +441,7 @@ pub struct RunRound {
     /// A map of contributor references to the relavent drop
     /// configuration (if the contributor needs to be dropped during
     /// this round).
-    contributor_drops: HashMap<ContributorRef, DropContributorSpec>,
+    contributor_drops: HashMap<ContributorRef, specification::DropContributor>,
     /// A vector of verifiers participating in this round. It is
     /// expected that the specified verifiers are already running.
     verifiers: Vec<Verifier>,
@@ -551,27 +470,27 @@ impl RunContributor {
 
 trait CommonContributorConfig {
     /// Get thre [`ContributorStartConfig`] for this contributor.
-    fn start(&self) -> ContributorStartSpec;
+    fn start(&self) -> specification::ContributorStart;
     /// Get thre [`DropContributorConfig`] for this contributor.
-    fn drop(&self) -> Option<DropContributorSpec>;
+    fn drop(&self) -> Option<specification::DropContributor>;
 }
 
 impl CommonContributorConfig for CLIContributorConfig {
-    fn start(&self) -> ContributorStartSpec {
+    fn start(&self) -> specification::ContributorStart {
         self.start.clone()
     }
 
-    fn drop(&self) -> Option<DropContributorSpec> {
+    fn drop(&self) -> Option<specification::DropContributor> {
         self.drop.clone()
     }
 }
 
 impl CommonContributorConfig for BrowserContributorConfig {
-    fn start(&self) -> ContributorStartSpec {
-        ContributorStartSpec::CeremonyStart
+    fn start(&self) -> specification::ContributorStart {
+        specification::ContributorStart::CeremonyStart
     }
 
-    fn drop(&self) -> Option<DropContributorSpec> {
+    fn drop(&self) -> Option<specification::DropContributor> {
         None
     }
 }
@@ -629,7 +548,10 @@ fn test_round(
         .iter()
         .filter(|round_contributor| {
             let contributor_config = round_contributor.config();
-            matches!(contributor_config.start(), ContributorStartSpec::RoundStart)
+            matches!(
+                contributor_config.start(),
+                specification::ContributorStart::RoundStart
+            )
         })
         .map(|run_contributor| {
             match run_contributor {
@@ -655,12 +577,9 @@ fn test_round(
         .filter_map(|round_contributor| {
             let contributor_config = round_contributor.config();
             match contributor_config.start() {
-                ContributorStartSpec::AfterRoundContributions(start_config) => {
+                specification::ContributorStart::AfterRoundContributions(start_config) => {
                     match round_contributor {
-                        RunContributor::CLI {
-                            contributor,
-                            config,
-                        } => {
+                        RunContributor::CLI { config, .. } => {
                             let process_join = JoinLater::new();
                             let waiter_process_join = process_join.clone();
                             let waiter_ceremony_tx = ceremony_tx.clone();

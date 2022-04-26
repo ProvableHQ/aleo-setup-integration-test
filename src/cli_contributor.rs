@@ -2,16 +2,17 @@
 //! ceremony contributor.
 
 use crate::{
-    drop_participant::DropContributorSpec,
     join::MultiJoinable,
     process::MonitorProcessMessage,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
-    test::ContributorStartSpec,
+    specification,
+    util::create_dir_if_not_exists,
     AleoPublicKey, CeremonyMessage, ContributorRef,
 };
 
+use color_eyre::Help;
 use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 use serde::Deserialize;
@@ -106,9 +107,9 @@ pub struct CLIContributorConfig {
     /// according to the specified config. If `None` then the
     /// contributor will not be deliberately dropped from the round,
     /// and if it is dropped, an error will occur.
-    pub drop: Option<DropContributorSpec>,
+    pub drop: Option<specification::DropContributor>,
     /// When this contributor is configured to start during the round.
-    pub start: ContributorStartSpec,
+    pub start: specification::ContributorStart,
 }
 
 /// Allows the threads created by [run_contributor()] to be joined.
@@ -157,7 +158,10 @@ pub fn run_cli_contributor(
         .expect("Should convert keys path to str")
         .to_owned();
 
-    let exec = subprocess::Exec::cmd(&config.bin_path.canonicalize()?)
+    create_dir_if_not_exists(&config.out_dir)?;
+
+    let bin_path = &config.bin_path.canonicalize()?;
+    let exec = subprocess::Exec::cmd(&bin_path)
         .cwd(&config.out_dir)
         .env("RUST_BACKTRACE", "1")
         .env("RUST_LOG", "debug,hyper=warn")
@@ -168,6 +172,14 @@ pub fn run_cli_contributor(
 
     let log_file_path = config.out_dir.join("contributor.log");
 
+    if !bin_path.exists() {
+        return Err(
+            eyre::eyre!("Binary path for CLI contributor does not exist: {:?}", &bin_path)
+                .suggestion("To ensure that the CLI contributor binary has been built, try running with `install-prerequisites: true` in your config."));
+    }
+
+    tracing::debug!("Running CLI contributor binary: {:?}", &bin_path);
+
     let (monitor_process_join, monitor_tx) = run_monitor_process(
         config.id.to_string(),
         exec,
@@ -177,7 +189,8 @@ pub fn run_cli_contributor(
         fallible_monitor(move |stdout, _ceremony_tx, _monitor_tx| {
             contributor_monitor(stdout, &log_file_path)
         }),
-    )?;
+    )
+    .wrap_err("Error starting CLI contributor process")?;
 
     let contributor_ref = config.contributor_ref.clone();
     let contributor_id = config.id.clone();

@@ -10,8 +10,8 @@ use crate::{
     npm::{check_node_version, npm_install},
     reporting::LogFileWriter,
     rust::{build_rust_crate, install_rust_toolchain, RustToolchain},
-    specification::Specification,
-    test::{integration_test, ContributorType, Repo, TestOptions},
+    specification::{self, Specification},
+    test::{integration_test, Repo, TestOptions},
     util::create_dir_if_not_exists,
 };
 
@@ -174,7 +174,7 @@ fn frontend_required(specification: &Specification) -> bool {
                 .contributors
                 .iter()
                 .filter(|contributor| {
-                    matches!(contributor.contributor_type, ContributorType::Browser)
+                    matches!(contributor.kind, specification::ContributorKind::Browser)
                 })
                 .next()
                 .is_some()

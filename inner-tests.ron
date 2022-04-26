@@ -9,7 +9,11 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -22,7 +26,14 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -35,7 +46,17 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -48,7 +69,20 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 4,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -61,7 +95,23 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 5,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -74,7 +124,11 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -87,7 +141,14 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -100,7 +161,17 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -113,7 +184,20 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 4,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -126,7 +210,23 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 5,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),

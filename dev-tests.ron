@@ -16,9 +16,11 @@
             /// Configure the tests performed for each round of the ceremony.
             rounds: [
                 (
-                    /// Number of contributor participants for this round of the
-                    /// ceremony.
-                    cli_contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -34,15 +36,15 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 1,
-                    /// Configure expected contributor drops. A contributor is
-                    /// assigned automatically to each specified config. The number of
-                    /// configs should not exceed the number of contributors.
-                    contributor_drops: [
+                    contributors: [
                         (
-                            /// A contributor is dropped (process killed) after having made
-                            /// this number of contributions.
-                            after_contributions: 10,
+                            kind: CLI,
+                            /// Configure expected contributor drop.
+                            drop: Some((
+                                /// A contributor is dropped (process killed) after having made
+                                /// this number of contributions.
+                                after_contributions: 10,
+                            )),
                         ),
                     ],
                 ),
@@ -57,7 +59,14 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -73,10 +82,15 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
-                    contributor_drops: [
+                    contributors: [
                         (
-                            after_contributions: 10,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 10,
+                            )),
+                        ),
+                        (
+                            kind: CLI,
                         ),
                     ],
                 ),
@@ -94,13 +108,18 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
-                    contributor_drops: [
+                    contributors: [
                         (
-                            after_contributions: 10,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 10,
+                            )),
                         ),
                         (
-                            after_contributions: 15,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 15,
+                            )),
                         ),
                     ],
                 ),
@@ -115,10 +134,21 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
+        // TODO: continue refactoring
         (
             id: "7",
             verifiers: 1,
@@ -131,10 +161,18 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 3,
-                    contributor_drops: [
+                    contributors: [
                         (
-                            after_contributions: 10,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 10,
+                            )),
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
                         ),
                     ],
                 ),
@@ -153,16 +191,24 @@
             skip: true,
             rounds: [
                 (
-                    cli_contributors: 3,
-                    contributor_drops: [
+                    contributors: [
                         (
-                            after_contributions: 10,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 10,
+                            )),
                         ),
                         (
-                            after_contributions: 11,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 11,
+                            )),
                         ),
                         (
-                            after_contributions: 15,
+                            kind: CLI,
+                            drop: Some((
+                                after_contributions: 15,
+                            )),
                         ),
                     ],
                 ),
@@ -177,7 +223,20 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 4,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -190,7 +249,23 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 5,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -203,7 +278,11 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -216,7 +295,14 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -229,7 +315,17 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -242,7 +338,20 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 4,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -255,7 +364,23 @@
             skip: false,
             rounds: [
                 (
-                    cli_contributors: 5,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -269,10 +394,18 @@
             /// Configure the tests performed for each round of the ceremony.
             rounds: [
                 (
-                    cli_contributors: 1
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
                 (
-                    cli_contributors: 1
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -286,10 +419,24 @@
             /// Configure the tests performed for each round of the ceremony.
             rounds: [
                 (
-                    cli_contributors: 2
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
                 (
-                    cli_contributors: 2
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
