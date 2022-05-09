@@ -3,9 +3,10 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    path::{PathBuf, Path},
+    path::{Path, PathBuf},
 };
 
+use color_eyre::Help;
 use eyre::Context;
 use fs_err::OpenOptions;
 use mpmc_bus::{Receiver, Sender};
@@ -144,7 +145,7 @@ lazy_static::lazy_static! {
 }
 
 fn monitor(
-    log_file_path: &Path, 
+    log_file_path: &Path,
     status_tx: Sender<FrontendServerStatusMessage>,
     stdout: File,
 ) -> eyre::Result<()> {
@@ -182,7 +183,7 @@ fn parse_output_line(line: &str) -> eyre::Result<Option<FrontendServerStatusMess
         return Ok(Some(FrontendServerStatusMessage::Started));
     }
     if ALREADY_RUNNING_RE.is_match(line) {
-        return Err(eyre::eyre!("{}", line));
+        return Err(eyre::eyre!("{}", line).with_suggestion(|| "The `node` process is probably a zombie from a previous run. If this is the case, you can try killing it manally using your system task manager."));
     }
     Ok(None)
 }

@@ -118,6 +118,12 @@ pub enum LaunchBrowser {
     Safari,
 }
 
+impl Default for LaunchBrowser {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 impl TryInto<webbrowser::Browser> for LaunchBrowser {
     type Error = eyre::Error;
     fn try_into(self) -> Result<webbrowser::Browser, eyre::Error> {
@@ -134,13 +140,13 @@ impl TryInto<webbrowser::Browser> for LaunchBrowser {
 pub struct ManualBrowserSettings {
     /// If `Some`, then a browser will be automatically launched to run the contributor. Which
     /// browser is launched depends on the chosen [`LaunchBrowser`].
+    #[serde(default = "default_manual_browser_launch")]
     pub launch: Option<LaunchBrowser>,
 }
 
-impl Default for LaunchBrowser {
-    fn default() -> Self {
-        Self::Default
-    }
+/// Default value for [`ManualBrowserSettings::launch`].
+fn default_manual_browser_launch() -> Option<LaunchBrowser> {
+    Some(LaunchBrowser::default())
 }
 
 /// What mode to run the browser contributor in.

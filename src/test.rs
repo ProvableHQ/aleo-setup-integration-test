@@ -584,11 +584,13 @@ fn test_round(
                     process_joins.push(Box::new(contributor_join));
                 }
                 RunContributor::Browser { config, .. } => {
-                    run_browser_contributor(
+                    if let Some(contributor_join) = run_browser_contributor(
                         config.clone(),
                         ceremony_tx.clone(),
                         ceremony_rx.clone(),
-                    )?;
+                    )? {
+                        process_joins.push(Box::new(contributor_join));
+                    }
                 }
             }
             Ok(run_contributor.clone())
@@ -633,7 +635,7 @@ fn test_round(
                         RunContributor::Browser {
                             contributor,
                             config,
-                        } => todo!(),
+                        } => unimplemented!(),
                     }
                 }
                 _ => None,
