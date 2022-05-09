@@ -174,7 +174,7 @@ fn frontend_required(specification: &Specification) -> bool {
                 .contributors
                 .iter()
                 .filter(|contributor| {
-                    matches!(contributor.kind, specification::ContributorKind::Browser)
+                    matches!(contributor.kind, specification::ContributorKind::Browser(_))
                 })
                 .next()
                 .is_some()

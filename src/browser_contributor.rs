@@ -1,7 +1,8 @@
 //! Testing for a contributor using the `setup-frontend` running in a web browser.
 
-use std::{path::PathBuf, time::Duration};
+use std::{convert::TryInto, path::PathBuf, time::Duration};
 
+use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 use thirtyfour::{By, DesiredCapabilities, WebDriver};
 use tracing::Instrument;
@@ -16,21 +17,6 @@ pub struct BrowserContributor {
     /// that the coordinator uses to refer to the contributor.
     pub id: String,
 }
-
-// impl BrowserContributor {
-//     /// The id used to reference this contributor by the coordinator,
-//     /// and within the ceremony transcript.
-//     pub fn id_on_coordinator(&self) -> String {
-//         format!("{}.contributor", self.address)
-//     }
-//
-//     /// Obtains the [ContributorRef] referring to this [Contributor].
-//     pub fn as_contributor_ref(&self) -> ContributorRef {
-//         ContributorRef {
-//             address: self.address.clone(),
-//         }
-//     }
-// }
 
 /// Configuration for running a contributor.
 #[derive(Debug, Clone)]
@@ -52,6 +38,8 @@ pub struct BrowserContributorConfig {
     pub drop: Option<specification::DropContributor>,
     /// When this contributor is configured to start during the round.
     pub start: specification::ContributorStart,
+    /// See [specification::BrowserTestMode].
+    pub mode: specification::BrowserTestMode,
 }
 
 // TODO: so we need to start a server to host the frontend. Then we need to start each contributor
@@ -63,6 +51,24 @@ pub fn run_browser_contributor(
     mut ceremony_rx: Receiver<CeremonyMessage>,
 ) -> eyre::Result<()> {
     let span = tracing::error_span!("browser_contributor", id = config.id.as_str());
+
+    if let specification::BrowserTestMode::Manual(manual_settings) = config.mode {
+        if let Some(launch) = manual_settings.launch {
+            tracing::info!(
+                "Launching Manual browser contributor on URL: {}",
+                &config.frontend_url
+            );
+            webbrowser::open_browser(launch.try_into()?, config.frontend_url.as_ref())
+                .wrap_err("Unable to open Manual browser contributor URL in the browser")?;
+        } else {
+            tracing::info!(
+                "Please open the URL to start the browser contributor: {}",
+                &config.frontend_url
+            );
+        }
+        return Ok(());
+    }
+
     std::thread::spawn::<_, eyre::Result<()>>(move || {
         let thread_span = span.clone();
         let _guard = thread_span.enter();
@@ -166,5 +172,5 @@ async fn spawn_browser_contributor(
         .await?;
     tracing::info!("Found: {}", element.text().await?);
 
-    Ok(())
+    todo!("This test has not been completely implemented yet");
 }

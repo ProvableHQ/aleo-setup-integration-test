@@ -21,7 +21,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structopt = "0.3"
 subprocess = "0.2.6"
-thirtyfour = "0.28"
+thirtyfour = "0.29"
 timer = "0.2"
 tokio = "1.17"
 toml = "0.5"
@@ -30,6 +30,7 @@ tracing-appender = "0.2"
 tracing-error = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
 url = "2"
+webbrowser = "0.7"
 
 [dev-dependencies]
 tempfile = "3.2"

@@ -29,12 +29,13 @@
                         // Contributor 1
                         (
                             // What kind of contributor to start.
-                            // Possible options: `CLI`, `Browser`.
+                            // Possible options: `CLI`, `Browser(<BrowserSettings>)`.
                             kind: CLI,
                             /// (Optional) Configure expected contributor drop.
                             drop: Some((
-                                /// A contributor is dropped (process killed) after having made
-                                /// this number of contributions.
+                                /// A contributor is dropped (process killed)
+                                //after having made / this number of
+                                //contributions.
                                 after_contributions: 10,
                             )),
                             // (Optional) Configure when contributor will start.
@@ -45,13 +46,18 @@
                         ),
                         // Contributor 2
                         (
-                            kind: CLI,
+                            kind: Browser((
+                                // (Optional) What kind of mode to use for
+                                // testing the browser contributor.
+                                // Possible options: `Automatic`, `Manual`.
+                                test_mode: Automatic,
+                            )),
                             start: AfterRoundContributions((
                                 // Start a ceremony participant after
                                 // specified contributions have been made in
                                 // the current round.
                                 after_round_contributions: 10
-                            ))
+                            )),
                         ),
                     ],
                 ),
@@ -59,7 +65,28 @@
                 (
                     contributors: [
                         (
-                            kind: CLI,
+                            kind: Browser((
+                                // (Optional) What kind of mode to use for
+                                // testing the browser contributor.
+                                // Possible options: `Automatic`, `Manual`.
+                                test_mode: Manual((
+                                    // (Optional) Whether a web browser should
+                                    // be launched automatically to run the
+                                    // contributor, and which browser should be used.
+                                    // Possible options: `None`, `Some(LaunchBrowser)`
+                                    // Default: `Some(Default)` which will launch
+                                    // the operating system's default browser.
+                                    launch: Some(
+                                        // Which browser to be used to run the
+                                        // contributor. Possible options:
+                                        // `Default`, `Firefox`, `Chrome`,
+                                        // `Safari`. When `Default`, the
+                                        // operating system's default browser
+                                        // will be used.
+                                        Firefox
+                                    ) 
+                                )),
+                            )),
                         ),
                     ],
                 ),

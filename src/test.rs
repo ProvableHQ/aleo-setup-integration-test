@@ -2,7 +2,7 @@
 //! `setup1-contributor` and `setup1-verifier`.
 
 use crate::{
-    browser_contributor::{BrowserContributor, BrowserContributorConfig},
+    browser_contributor::{run_browser_contributor, BrowserContributor, BrowserContributorConfig},
     ceremony_waiter::spawn_contribution_waiter,
     cli_contributor::{
         generate_contributor_key, run_cli_contributor, CLIContributor, CLIContributorConfig,
@@ -12,7 +12,7 @@ use crate::{
     git::{LocalGitRepo, RemoteGitRepo},
     join::{join_multiple, JoinLater, JoinMultiple, MultiJoinable},
     reporting::LogFileWriter,
-    specification,
+    specification::{self, LaunchBrowser},
     state_monitor::{run_state_monitor, StateMonitorConfig},
     time_limit::ceremony_time_limit,
     util::create_dir_if_not_exists,
@@ -25,6 +25,7 @@ use eyre::Context;
 use humantime::format_duration;
 use mpmc_bus::{Bus, Receiver, Sender};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use std::{
     collections::HashMap,
@@ -97,6 +98,8 @@ pub struct StateMonitorOptions {
     /// The address used for the `aleo-setup-state-monitor` web
     /// server.
     pub address: SocketAddr,
+    /// If `Some`, a web browser will automatically be opened to show the state monitor page.
+    pub launch_browser: Option<LaunchBrowser>,
 }
 
 #[derive(Serialize)]
@@ -201,8 +204,23 @@ pub fn integration_test(
 
                     let contributor_out_dir = options.out_dir.join(&id);
 
-                    let run_contributor = match contributor_spec.kind {
-                        specification::ContributorKind::Browser => todo!(),
+                    let run_contributor = match &contributor_spec.kind {
+                        specification::ContributorKind::Browser(browser_settings) => {
+                            let contributor = BrowserContributor { id: id.clone() };
+                            let config = BrowserContributorConfig {
+                                id,
+                                frontend_url: Url::parse("http://localhost:3000").unwrap(),
+                                out_dir: contributor_out_dir,
+                                drop: contributor_spec.drop.clone(),
+                                start: contributor_spec.start.clone(),
+                                mode: browser_settings.test_mode.clone(),
+                            };
+
+                            RunContributor::Browser {
+                                contributor,
+                                config,
+                            }
+                        }
                         specification::ContributorKind::CLI => {
                             let contributor_key_file_name = format!("{}-key.json", id);
                             let key_file = keys_dir_path.join(contributor_key_file_name);
@@ -350,6 +368,7 @@ pub fn integration_test(
             transcript_dir: coordinator_config.transcript_dir(),
             out_dir: options.out_dir.clone(),
             address: state_monitor_options.address,
+            launch_browser: state_monitor_options.launch_browser.clone(),
         };
 
         let state_monitor_join = run_state_monitor(
@@ -487,11 +506,11 @@ impl CommonContributorConfig for CLIContributorConfig {
 
 impl CommonContributorConfig for BrowserContributorConfig {
     fn start(&self) -> specification::ContributorStart {
-        specification::ContributorStart::CeremonyStart
+        self.start.clone()
     }
 
     fn drop(&self) -> Option<specification::DropContributor> {
-        None
+        self.drop.clone()
     }
 }
 
@@ -543,6 +562,7 @@ fn test_round(
 
     // Run the contributors which are to be present at the start of
     // the round.
+    tracing::info!("Starting RoundStart contributors.");
     let starting_contributors: Vec<RunContributor> = round_config
         .contributors
         .iter()
@@ -563,7 +583,13 @@ fn test_round(
                     )?;
                     process_joins.push(Box::new(contributor_join));
                 }
-                RunContributor::Browser { .. } => todo!(),
+                RunContributor::Browser { config, .. } => {
+                    run_browser_contributor(
+                        config.clone(),
+                        ceremony_tx.clone(),
+                        ceremony_rx.clone(),
+                    )?;
+                }
             }
             Ok(run_contributor.clone())
         })

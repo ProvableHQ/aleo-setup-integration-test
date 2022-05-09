@@ -1,6 +1,7 @@
 //! This module contains functions for running multiple integration
 //! tests.
 
+use crate::specification::LaunchBrowser;
 use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 
 use serde::Deserialize;
@@ -94,6 +95,11 @@ pub struct StateMonitorConfig {
     /// server. By default `127.0.0.1:5001`.
     #[serde(default = "default_state_monitor_address")]
     pub address: SocketAddr,
+    /// If `Some`, a browser will be automatically launched to show the state monitor page. By
+    /// default `Some(LaunchBrowser::Default)` which will launch the operating system's default
+    /// browser.
+    #[serde(default = "default_state_monitor_launch_browser")]
+    pub launch_browser: Option<LaunchBrowser>,
 }
 
 impl From<StateMonitorConfig> for StateMonitorOptions {
@@ -101,6 +107,7 @@ impl From<StateMonitorConfig> for StateMonitorOptions {
         Self {
             repo: config.repo,
             address: config.address,
+            launch_browser: config.launch_browser,
         }
     }
 }
@@ -110,6 +117,7 @@ impl Default for StateMonitorConfig {
         Self {
             repo: default_aleo_setup_state_monitor_repo(),
             address: default_state_monitor_address(),
+            launch_browser: default_state_monitor_launch_browser(),
         }
     }
 }
@@ -146,13 +154,23 @@ pub fn default_state_monitor() -> Option<StateMonitorConfig> {
     Some(Default::default())
 }
 
-/// Default value for [Config::aleo_setup_state_monitor_repo].
+/// Defautl value for [StateMonitorConfig::launch]
+pub fn default_state_monitor_launch_browser() -> Option<LaunchBrowser> {
+    Some(LaunchBrowser::default())
+}
+
+/// Default value for [StateMonitorConfig::repo].
 pub fn default_aleo_setup_state_monitor_repo() -> Repo {
     Repo::Remote(RemoteGitRepo {
         dir: "aleo-setup-state-monitor".into(),
         url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git".into(),
         branch: "include-build".into(), // branch to include build files so that npm is not required
     })
+}
+
+/// Default value for [StateMonitorConfig::address].
+fn default_state_monitor_address() -> SocketAddr {
+    SocketAddr::from_str("127.0.0.1:5001").unwrap()
 }
 
 /// Default value for [Config::build].
@@ -163,11 +181,6 @@ fn default_build() -> bool {
 /// Default value for [Config::install_prerequisites].
 fn default_install_prerequisites() -> bool {
     true
-}
-
-/// Default value for [Config::state_monitor_address].
-fn default_state_monitor_address() -> SocketAddr {
-    SocketAddr::from_str("127.0.0.1:5001").unwrap()
 }
 
 pub type TestId = String;

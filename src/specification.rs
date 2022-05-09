@@ -2,6 +2,8 @@
 //! [example-specification.ron](../example-specification.ron) for an annotated example of the
 //! specification file that the code in this module supports deserializing.
 
+use std::convert::TryInto;
+
 use serde::{Deserialize, Serialize};
 
 use crate::Environment;
@@ -84,11 +86,74 @@ impl Default for ContributorStart {
 
 /// What type of contributor will be started.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum ContributorKind {
     /// Browser Contributor.
-    Browser,
+    Browser(BrowserSettings),
     /// CLI Contributor.
     CLI,
+}
+
+/// Settings for launching a browser contributor.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct BrowserSettings {
+    /// See [`BrowserTestMode`].
+    #[serde(default)]
+    pub test_mode: BrowserTestMode,
+}
+
+/// What type of web browser to use for manual browser
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum LaunchBrowser {
+    ///Operating system's default browser
+    Default,
+
+    ///Mozilla Firefox
+    Firefox,
+
+    ///Google Chrome
+    Chrome,
+
+    ///Mac OS Safari
+    Safari,
+}
+
+impl TryInto<webbrowser::Browser> for LaunchBrowser {
+    type Error = eyre::Error;
+    fn try_into(self) -> Result<webbrowser::Browser, eyre::Error> {
+        Ok(match self {
+            LaunchBrowser::Default => webbrowser::Browser::Default,
+            LaunchBrowser::Firefox => webbrowser::Browser::Firefox,
+            LaunchBrowser::Chrome => webbrowser::Browser::Chrome,
+            LaunchBrowser::Safari => webbrowser::Browser::Safari,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ManualBrowserSettings {
+    /// If `Some`, then a browser will be automatically launched to run the contributor. Which
+    /// browser is launched depends on the chosen [`LaunchBrowser`].
+    pub launch: Option<LaunchBrowser>,
+}
+
+impl Default for LaunchBrowser {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+/// What mode to run the browser contributor in.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum BrowserTestMode {
+    Automatic,
+    Manual(ManualBrowserSettings),
+}
+
+impl Default for BrowserTestMode {
+    fn default() -> Self {
+        Self::Automatic
+    }
 }
 
 /// The configuration for dropping a contributor from the ceremony.

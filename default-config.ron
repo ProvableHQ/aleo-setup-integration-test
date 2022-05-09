@@ -73,5 +73,7 @@
         // The address used for the `aleo-setup-state-monitor` web
         // server. By default `127.0.0.1:5001`.
         address: "127.0.0.1:5001",
+        // Launch a browser to show the state monitor page.
+        launch_browser: Some(Default),
     )),
 )

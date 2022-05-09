@@ -4,6 +4,7 @@ use crate::{
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
+    specification::LaunchBrowser,
     CeremonyMessage,
 };
 
@@ -11,8 +12,10 @@ use eyre::Context;
 use mpmc_bus::{Receiver, Sender};
 
 use subprocess::Exec;
+use url::Url;
 
 use std::{
+    convert::TryInto,
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
     net::SocketAddr,
@@ -30,6 +33,8 @@ pub struct StateMonitorConfig {
     /// the state monitor will be stored (and the current working
     /// directory for the process).
     pub out_dir: PathBuf,
+    /// If `Some`, the address for the state monitor will be opened using a web browser.
+    pub launch_browser: Option<LaunchBrowser>,
 }
 
 /// Starts the `aleo-setup-state-monitor` server.
@@ -69,7 +74,17 @@ pub fn run_state_monitor(
         }),
     )?;
 
-    tracing::info!("Running setup state monitor on http://{}", config.address);
+    let url = Url::parse(&format!("http://{}", config.address))?;
+
+    tracing::info!("Running setup state monitor on {}", &url);
+
+    if let Some(launch_browser) = config.launch_browser {
+        if let Err(error) = webbrowser::open_browser(launch_browser.try_into()?, url.as_ref())
+            .wrap_err("Error while automatically launching browser")
+        {
+            tracing::error!("{}", error)
+        }
+    }
 
     Ok(join)
 }
