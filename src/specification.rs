@@ -102,7 +102,7 @@ pub struct BrowserSettings {
     pub test_mode: BrowserTestMode,
 }
 
-/// What type of web browser to use for manual browser
+/// What type of web browser to use for manual browser.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum LaunchBrowser {
     ///Operating system's default browser

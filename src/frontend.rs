@@ -3,7 +3,7 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
+    path::{PathBuf, Path},
 };
 
 use eyre::Context;
@@ -111,39 +111,11 @@ pub fn start_frontend_dev_server(
 
     let status_tx = status_bus.broadcaster();
     let log_file_path = config.out_dir.join("frontend_server.log");
-    std::thread::spawn::<_, eyre::Result<()>>(move || {
+    std::thread::spawn(move || {
         let span = tracing::error_span!("frontend_server_monitor");
         let _guard = span.enter();
 
-        let buf_pipe = BufReader::new(stdout);
-
-        let mut log_file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(log_file_path)
-            .wrap_err("unable to open log file")?;
-
-        // It's expected that if the process closes, the stdout will also
-        // close and this iterator will complete gracefully.
-        for line_result in buf_pipe.lines() {
-            match line_result {
-                Ok(line) => {
-                    // Write to log file.
-                    log_file.write_all(line.as_ref())?;
-                    log_file.write_all("\n".as_ref())?;
-
-                    if let Some(message) = parse_output_line(&line)? {
-                        status_tx.broadcast(message)?;
-                    }
-                }
-                Err(error) => tracing::error!(
-                    "Error reading line from pipe to coordinator process: {}",
-                    error
-                ),
-            }
-        }
-
-        Ok(())
+        monitor(&log_file_path, status_tx, stdout).expect("Error running frontend");
     });
 
     tracing::info!("Waiting for frontend server to start.");
@@ -168,11 +140,49 @@ lazy_static::lazy_static! {
     /// typecheck results...", the output seems to change from time to time, perhaps depending on
     /// whether it's a clean compile or using something cached.
     static ref STARTED_RE: Regex = Regex::new(".*Compiled with warnings.*").unwrap();
+    static ref ALREADY_RUNNING_RE: Regex = Regex::new("Something is already running on port.*").unwrap();
+}
+
+fn monitor(
+    log_file_path: &Path, 
+    status_tx: Sender<FrontendServerStatusMessage>,
+    stdout: File,
+) -> eyre::Result<()> {
+    let buf_pipe = BufReader::new(stdout);
+    let mut log_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(log_file_path)
+        .wrap_err("unable to open log file")?;
+
+    // It's expected that if the process closes, the stdout will also
+    // close and this iterator will complete gracefully.
+    for line_result in buf_pipe.lines() {
+        match line_result {
+            Ok(line) => {
+                // Write to log file.
+                log_file.write_all(line.as_ref())?;
+                log_file.write_all("\n".as_ref())?;
+
+                if let Some(message) = parse_output_line(&line)? {
+                    status_tx.broadcast(message)?;
+                }
+            }
+            Err(error) => tracing::error!(
+                "Error reading line from pipe to coordinator process: {}",
+                error
+            ),
+        }
+    }
+    Ok(())
 }
 
 fn parse_output_line(line: &str) -> eyre::Result<Option<FrontendServerStatusMessage>> {
     if STARTED_RE.is_match(line) {
         return Ok(Some(FrontendServerStatusMessage::Started));
+    }
+    if ALREADY_RUNNING_RE.is_match(line) {
+        return Err(eyre::eyre!("{}", line));
     }
     Ok(None)
 }
