@@ -154,13 +154,13 @@ mod test {
         let out_file = out_dir.path().join("test.log");
 
         let mut log_writer = LogFileWriter::new();
-        log_writer.write(b"a").unwrap();
+        log_writer.write_all(b"a").unwrap();
         assert!(!out_file.exists());
 
         let mut log_writer_1 = log_writer.clone();
         let join1 = std::thread::spawn(move || {
             for _ in 0..100 {
-                log_writer_1.write(b"b").unwrap();
+                log_writer_1.write_all(b"b").unwrap();
             }
         });
 

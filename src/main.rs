@@ -5,6 +5,7 @@ use aleo_setup_integration_test::{
     config::Config,
     options::CmdOptions,
     reporting::{setup_reporting, LogFileWriter},
+    run::run,
     specification::{Specification, TestId},
 };
 
@@ -56,14 +57,12 @@ fn main() -> eyre::Result<()> {
             )
         })?;
 
-    let result = specification
-        .run(&config, &only_tests, &log_writer)
-        .wrap_err_with(|| {
-            eyre::eyre!(
-                "Error while running tests specified in {:?}",
-                &options.specification_file
-            )
-        });
+    let result = run(&specification, &config, &only_tests, &log_writer).wrap_err_with(|| {
+        eyre::eyre!(
+            "Error while running tests specified in {:?}",
+            &options.specification_file
+        )
+    });
 
     // report the error to tracing and log file
     if let Err(error) = &result {

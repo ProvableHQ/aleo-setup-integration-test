@@ -1,26 +1,4 @@
 (
-    clean: true,
-    keep_repos: true,
-    state_monitor: true,
-    out_dir: "out",
-    aleo_setup_repo: (
-        type: "Remote",
-        dir: "aleo-setup",
-        url: "git@github.com:AleoHQ/aleo-setup.git",
-        branch: "master",
-    ),
-    aleo_setup_coordinator_repo: (
-        type: "Remote",
-        dir: "aleo-setup-coordinator",
-        url: "git@github.com:AleoHQ/aleo-setup-coordinator.git",
-        branch: "main",
-    ),
-    aleo_setup_state_monitor_repo: (
-        type: "Remote",
-        dir: "aleo-setup-state-monitor",
-        url: "git@github.com:AleoHQ/aleo-setup-state-monitor.git",
-        branch: "include-build",
-    ),
     tests: [
         (
             id: "1",
@@ -31,7 +9,11 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -44,7 +26,14 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -57,7 +46,17 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -70,7 +69,20 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 4,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -83,7 +95,11 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 1,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -96,7 +112,14 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 2,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -109,7 +132,17 @@
             skip: false,
             rounds: [
                 (
-                    contributors: 3,
+                    contributors: [
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                        (
+                            kind: CLI,
+                        ),
+                    ],
                 ),
             ],
         ),

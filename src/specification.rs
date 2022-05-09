@@ -1,19 +1,12 @@
-//! This module contains functions for running multiple integration
-//! tests.
+//! Format of the specification of the tests to be run. See
+//! [example-specification.ron](../example-specification.ron) for an annotated example of the
+//! specification file that the code in this module supports deserializing.
 
-use std::time::Duration;
+use std::convert::TryInto;
 
-use color_eyre::Section;
-use eyre::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::Config,
-    reporting::LogFileWriter,
-    test::{integration_test, TestOptions, TestRound},
-    util::create_dir_if_not_exists,
-    Environment,
-};
+use crate::Environment;
 
 /// Specification for multiple tests to be performed. Will be
 /// deserialized from a ron file.
@@ -21,7 +14,7 @@ use crate::{
 #[serde(deny_unknown_fields)]
 pub struct Specification {
     /// Specifications for the individual tests.
-    pub tests: Vec<SingleTestOptions>,
+    pub tests: Vec<SingleTest>,
 }
 
 pub type TestId = String;
@@ -30,7 +23,7 @@ pub type TestId = String;
 /// field.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub struct SingleTestOptions {
+pub struct SingleTest {
     /// Id for the individual test.
     pub id: TestId,
 
@@ -60,154 +53,152 @@ pub struct SingleTestOptions {
     pub rounds: Vec<TestRound>,
 }
 
-/// Default value for [TestOptions::replacement_contributors].
+/// Start a ceremony participant after
+/// [StartAfterContributions::contributions] have been made in the
+/// current round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StartAfterRoundContributions {
+    /// See [StartAfterContributions].
+    pub after_round_contributions: u64,
+}
+
+/// The configuration for when a contributor will be started
+/// during/before a round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ContributorStart {
+    /// Start the contributor at the beginning of the ceremony. This
+    /// is only a valid option for replacement contributors.
+    CeremonyStart,
+    /// Start the contributor while the current round is waiting for
+    /// participants to join.
+    RoundStart,
+    // See [StartAfterContributions].
+    AfterRoundContributions(StartAfterRoundContributions),
+}
+
+impl Default for ContributorStart {
+    fn default() -> Self {
+        Self::RoundStart
+    }
+}
+
+/// What type of contributor will be started.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ContributorKind {
+    /// Browser Contributor.
+    Browser(BrowserSettings),
+    /// CLI Contributor.
+    CLI,
+}
+
+/// Settings for launching a browser contributor.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct BrowserSettings {
+    /// See [`BrowserTestMode`].
+    #[serde(default)]
+    pub test_mode: BrowserTestMode,
+}
+
+/// What type of web browser to use for manual browser.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum LaunchBrowser {
+    ///Operating system's default browser
+    Default,
+
+    ///Mozilla Firefox
+    Firefox,
+
+    ///Google Chrome
+    Chrome,
+
+    ///Mac OS Safari
+    Safari,
+}
+
+impl Default for LaunchBrowser {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl TryInto<webbrowser::Browser> for LaunchBrowser {
+    type Error = eyre::Error;
+    fn try_into(self) -> Result<webbrowser::Browser, eyre::Error> {
+        Ok(match self {
+            LaunchBrowser::Default => webbrowser::Browser::Default,
+            LaunchBrowser::Firefox => webbrowser::Browser::Firefox,
+            LaunchBrowser::Chrome => webbrowser::Browser::Chrome,
+            LaunchBrowser::Safari => webbrowser::Browser::Safari,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ManualBrowserSettings {
+    /// If `Some`, then a browser will be automatically launched to run the contributor. Which
+    /// browser is launched depends on the chosen [`LaunchBrowser`].
+    #[serde(default = "default_manual_browser_launch")]
+    pub launch: Option<LaunchBrowser>,
+}
+
+/// Default value for [`ManualBrowserSettings::launch`].
+fn default_manual_browser_launch() -> Option<LaunchBrowser> {
+    Some(LaunchBrowser::default())
+}
+
+/// What mode to run the browser contributor in.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum BrowserTestMode {
+    Automatic,
+    Manual(ManualBrowserSettings),
+}
+
+impl Default for BrowserTestMode {
+    fn default() -> Self {
+        Self::Automatic
+    }
+}
+
+/// The configuration for dropping a contributor from the ceremony.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropContributor {
+    /// A contributor is dropped (process killed) after having made
+    /// this number of contributions.
+    pub after_contributions: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Contributor {
+    /// See [`ContributorType`].
+    pub kind: ContributorKind,
+    /// See [`ContributorStartConfig`].
+    #[serde(default)]
+    pub start: ContributorStart,
+    /// See [`DropContributorConfig`].
+    #[serde(default)]
+    pub drop: Option<DropContributor>,
+}
+
+/// Specification for running each round of the ceremony.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TestRound {
+    /// Specification for each contributor that will be started for this round.
+    pub contributors: Vec<Contributor>,
+}
+
+/// Default value for [SingleTestOptions::replacement_contributors].
 fn default_replacement_contributors() -> u8 {
     0
 }
 
+/// Default value for [SingleTestOptions::skip].
 fn skip_default() -> bool {
     false
-}
-
-impl Specification {
-    /// Run multiple tests specified in the ron specification file.
-    ///
-    /// If `only_tests` contains some values, only the test id's contained
-    /// within this vector will be run. This will override the test's skip
-    /// value.
-    pub fn run(
-        &self,
-        config: &Config,
-        only_tests: &[TestId],
-        log_writer: &LogFileWriter,
-    ) -> eyre::Result<()> {
-        if self.tests.is_empty() {
-            return Err(eyre::eyre!(
-                "Expected at least one test to be defined in the specification file."
-            ));
-        }
-
-        let out_dir = config.out_dir.clone();
-
-        // Perfom the clean action if required.
-        if config.clean {
-            tracing::info!("Cleaning integration test.");
-
-            if out_dir.exists() {
-                tracing::info!("Removing out dir: {:?}", out_dir);
-                std::fs::remove_dir_all(&out_dir)?;
-            }
-        }
-
-        create_dir_if_not_exists(&out_dir)?;
-
-        let mut errors: Vec<eyre::Error> = self
-            .tests
-            .iter()
-            .filter(|options| {
-                if !only_tests.is_empty() {
-                    only_tests.contains(&options.id)
-                } else if options.skip {
-                    tracing::info!("Skipping test {}", options.id);
-                    false
-                } else {
-                    true
-                }
-            })
-            .enumerate()
-            .map(|(i, options)| {
-                let test_id = &options.id;
-                let out_dir = out_dir.join(test_id);
-
-                dbg!(&options);
-
-                // The first test uses the keep_repos and no_prereqs
-                // option. Subsequent tests do not clean, and do not
-                // attempt to install prerequisites.
-                let test_options = if i == 0 {
-                    TestOptions {
-                        clean: false,
-                        build: config.build,
-                        keep_repos: config.keep_repos,
-                        install_prerequisites: config.install_prerequisites,
-                        replacement_contributors: options.replacement_contributors,
-                        verifiers: options.verifiers,
-                        out_dir,
-                        environment: options.environment,
-                        state_monitor: config.state_monitor.clone().map(Into::into),
-                        timout: options.timout.map(Duration::from_secs),
-                        aleo_setup_repo: config.aleo_setup_repo.clone(),
-                        aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
-                        rounds: options.rounds.clone(),
-                    }
-                } else {
-                    TestOptions {
-                        clean: false,
-                        build: false,
-                        keep_repos: true,
-                        install_prerequisites: false,
-                        replacement_contributors: options.replacement_contributors,
-                        verifiers: options.verifiers,
-                        out_dir,
-                        environment: options.environment,
-                        state_monitor: config.state_monitor.clone().map(Into::into),
-                        timout: options.timout.map(Duration::from_secs),
-                        aleo_setup_repo: config.aleo_setup_repo.clone(),
-                        aleo_setup_coordinator_repo: config.aleo_setup_coordinator_repo.clone(),
-                        rounds: options.rounds.clone(),
-                    }
-                };
-
-                (test_id, test_options)
-            })
-            .map(|(id, options)| {
-                let span = tracing::error_span!("test", id=%id);
-                let _guard = span.enter();
-
-                tracing::info!("Running integration test with id {:?}", id);
-
-                integration_test(&options, log_writer)
-                    .map(|test_results| {
-                        let test_results_str =
-                            ron::ser::to_string_pretty(&test_results, Default::default())
-                                .expect("Unable to serialize test results");
-                        tracing::info!("Test results: \n {}", test_results_str);
-                    })
-                    .wrap_err_with(|| {
-                        eyre::eyre!("Error while running individual test with id: {:?}", id)
-                    })
-            })
-            .filter(Result::is_err)
-            .map(Result::unwrap_err)
-            .map(|error| {
-                // Display error message for each error that occurs during individual tests.
-                tracing::error!("{:?}", error);
-                error
-            })
-            .collect();
-
-        let n_errors = errors.len();
-
-        // Grab the last error which will be the one actually returned by this method.
-        let last_error = errors.pop();
-
-        let result = match last_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        };
-
-        match n_errors {
-            1 => {
-                result.wrap_err_with(|| eyre::eyre!("Error during one of the integration tests"))
-            }
-            _ => {
-                result.wrap_err_with(|| eyre::eyre!("Errors during {} of the integration tests", n_errors))
-                    .with_note(||
-                        format!("{} errors have occurred. This error shows the trace for the last error that occurred. \
-                        Check the stdout log for ERROR trace messages for other errors.", n_errors))
-            }
-        }
-    }
 }
 
 #[cfg(test)]

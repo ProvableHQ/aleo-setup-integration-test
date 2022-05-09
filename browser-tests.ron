@@ -1,0 +1,25 @@
+(
+    tests: [
+        (
+            id: "1",
+            verifiers: 1,
+            replacement_contributors: 0,
+            environment: inner,
+            timout: Some(18000),
+            skip: false,
+            rounds: [
+                (
+                    contributors: [
+                        (
+                            kind: Browser((
+                                // TODO: complete implementation
+                                // test_mode: Automatic,
+                                test_mode: Manual(()),
+                            )),
+                        )
+                    ]
+                ),
+            ],
+        ),
+    ],
+)

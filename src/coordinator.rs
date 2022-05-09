@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 use subprocess::Exec;
 
 use crate::{
-    contributor::Contributor,
     process::{
         default_parse_exit_status, fallible_monitor, run_monitor_process, MonitorProcessJoin,
     },
+    test::RunContributor,
     verifier::Verifier,
     AleoPublicKey, CeremonyMessage, ContributorRef, Environment, ParticipantRef, ShutdownReason,
     VerifierRef,
@@ -491,7 +491,7 @@ struct RoundState {
     contributor_ids: Vec<String>,
     /// The ids of the verifiers in the round.
     #[serde(rename = "verifierIds")]
-    verifier_ids: Vec<String>,
+    _verifier_ids: Vec<String>,
 }
 
 /// Check that the specified participants are in the specified round
@@ -499,8 +499,8 @@ struct RoundState {
 pub fn check_participants_in_round(
     config: &CoordinatorConfig,
     round: u64,
-    contributors: &[Contributor],
-    verifiers: &[Verifier],
+    contributors: &[RunContributor],
+    _verifiers: &[Verifier],
 ) -> eyre::Result<()> {
     let state_file = config
         .transcript_dir()
@@ -514,16 +514,24 @@ pub fn check_participants_in_round(
         .wrap_err_with(|| eyre::eyre!("Unable to deserialize state file: {:?}", state_file))?;
 
     for contributor in contributors {
-        state
-            .contributor_ids
-            .iter()
-            .find(|round_contributor_id| round_contributor_id == &&contributor.id_on_coordinator())
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "Unable to find contributor {} in round state file",
-                    contributor.id_on_coordinator()
-                )
-            })?;
+        match contributor {
+            RunContributor::CLI { contributor, .. } => {
+                state
+                    .contributor_ids
+                    .iter()
+                    .find(|round_contributor_id| {
+                        round_contributor_id == &&contributor.id_on_coordinator()
+                    })
+                    .ok_or_else(|| {
+                        eyre::eyre!(
+                            "Unable to find contributor {} in round state file",
+                            contributor.id_on_coordinator()
+                        )
+                    })?;
+            }
+            // This check has not been implemented yet for the browser contributor.
+            RunContributor::Browser { .. } => {}
+        }
     }
 
     Ok(())

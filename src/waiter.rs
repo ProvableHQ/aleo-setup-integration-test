@@ -189,6 +189,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::mutex_atomic)]
     fn test_spawn_expected() {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();
@@ -205,7 +206,6 @@ mod test {
         );
 
         let has_joined = Arc::new(Mutex::new(false));
-
         let has_joined_thread = has_joined.clone();
         let waiter_joiner = std::thread::spawn(move || {
             waiter.join().unwrap();
@@ -229,6 +229,7 @@ mod test {
     /// Test that upon shutdown the waiter is joined, but the
     /// on_messages_receieved closure is not invoked.
     #[test]
+    #[allow(clippy::mutex_atomic)]
     fn test_spawn_expected_shutdown() {
         let bus = Bus::<u8>::new(100);
         let rx = bus.subscribe();

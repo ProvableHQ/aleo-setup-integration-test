@@ -23,49 +23,72 @@
             rounds: [
                 // Round 1
                 (
-                    // Number of contributor participants for this
-                    // round of the ceremony.
-                    contributors: 2,
-                    // (Optional) Configure expected contributor
-                    // drops. A contributor from contributors is
-                    // assigned automatically to each specified
-                    // config. The number of configs should not exceed
-                    // the number of contributors. Default: [].
-                    contributor_drops: [
+                    // The contributors that will present for this round 
+                    // of the ceremony.
+                    contributors: [
+                        // Contributor 1
                         (
-                            // A contributor is dropped (process
-                            // killed) after having made this number
-                            // of contributions.
-                            after_contributions: 10,
+                            // What kind of contributor to start.
+                            // Possible options: `CLI`, `Browser(<BrowserSettings>)`.
+                            kind: CLI,
+                            /// (Optional) Configure expected contributor drop.
+                            drop: Some((
+                                /// A contributor is dropped (process killed)
+                                //after having made / this number of
+                                //contributions.
+                                after_contributions: 10,
+                            )),
+                            // (Optional) Configure when contributor will start.
+                            // Possible values: `RoundStart`, `CeremonyStart`,
+                            // `AfterRoundContributions(<StartAfterRoundContributions>)`.
+                            // Default: `RoundStart`.
+                            start: RoundStart,
+                        ),
+                        // Contributor 2
+                        (
+                            kind: Browser((
+                                // (Optional) What kind of mode to use for
+                                // testing the browser contributor.
+                                // Possible options: `Automatic`, `Manual`.
+                                test_mode: Automatic,
+                            )),
+                            start: AfterRoundContributions((
+                                // Start a ceremony participant after
+                                // specified contributions have been made in
+                                // the current round.
+                                after_round_contributions: 10
+                            )),
                         ),
                     ],
-                    // (Optional) Configure when contributors will
-                    // start. A contributor from contributors is
-                    // assigned automatically to each specified
-                    // config. The number of configs should not exceed
-                    // the number of contributors. Any contributors
-                    // not configured here will be started with the
-                    // start of the round as per RoundStart. Default:
-                    // [].
-                    contributor_starts: [
-                        // Contributor 1.
-                        // Start the contributor while the current round is waiting for
-                        // participants to join.
-                        RoundStart,
-                        // Contributor 2.
-                        // Start a ceremony participant after
-                        // specified contributions have been made in
-                        // the current round.
-                        AfterRoundContributions((
-                            after_round_contributions: 5
-                        ))
-                    ]
                 ),
                 // Round 2
                 (
-                    // Number of contributor participants for this
-                    // round of the ceremony.
-                    contributors: 1,
+                    contributors: [
+                        (
+                            kind: Browser((
+                                // (Optional) What kind of mode to use for
+                                // testing the browser contributor.
+                                // Possible options: `Automatic`, `Manual`.
+                                test_mode: Manual((
+                                    // (Optional) Whether a web browser should
+                                    // be launched automatically to run the
+                                    // contributor, and which browser should be used.
+                                    // Possible options: `None`, `Some(LaunchBrowser)`
+                                    // Default: `Some(Default)` which will launch
+                                    // the operating system's default browser.
+                                    launch: Some(
+                                        // Which browser to be used to run the
+                                        // contributor. Possible options:
+                                        // `Default`, `Firefox`, `Chrome`,
+                                        // `Safari`. When `Default`, the
+                                        // operating system's default browser
+                                        // will be used.
+                                        Firefox
+                                    ) 
+                                )),
+                            )),
+                        ),
+                    ],
                 ),
             ],
         ),

@@ -8,24 +8,29 @@ edition = "2018"
 [dependencies]
 clap = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
-color-eyre = "0.5"
+color-eyre = "0.6"
 eyre = "0.6"
+fs-err = "2.6"
 humantime = "2.1"
 humantime-serde = "1.0"
 lazy_static = "1.4"
 mpmc-bus = { git = "https://github.com/AleoHQ/mpmc-bus.git", branch = "main" }
-ron = "0.6"
+ron = "0.7"
 regex = "1.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 structopt = "0.3"
 subprocess = "0.2.6"
+thirtyfour = "0.29"
 timer = "0.2"
+tokio = "1.17"
 toml = "0.5"
 tracing = "0.1"
-tracing-appender = "0.1"
-tracing-error = "0.1"
-tracing-subscriber = "0.2"
+tracing-appender = "0.2"
+tracing-error = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+url = "2"
+webbrowser = "0.7"
 
 [dev-dependencies]
 tempfile = "3.2"
